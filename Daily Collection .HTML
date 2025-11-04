@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Daily Cash Collection Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<style>
+  body { font-family: Arial; margin: 10px; background: #f5f5f5; }
+  h2, h3 { color: #333; }
+  input, select, button {
+    padding: 12px; margin: 8px 0; border-radius: 6px; border: 1px solid #aaa;
+    font-size:18px; width: 100%; box-sizing: border-box;
+  }
+  button {
+    background-color: #007bff; color: white; border:none; cursor:pointer;
+  }
+  button:hover {
+    background-color: #0056b3;
+  }
+  label { font-weight: bold; display: block; margin-top: 10px; font-size:16px; }
+  table {
+    border-collapse: collapse; width: 100%; margin-top: 15px; background: white;
+  }
+  th, td {
+    border: 1px solid gray; padding: 10px; text-align: center; font-size: 16px;
+  }
+  th {
+    background-color: #ddd;
+  }
+  .total-box {
+    background: #fff4d1; padding: 12px; border: 1px solid #ccc; margin-bottom: 15px;
+    font-size: 20px; font-weight: bold;
+  }
+  #filterDate, #filterAcc {
+    max-width: 250px;
+  }
+  #cumulativeBalance {
+    font-weight: bold; margin-top: 6px; font-size: 16px; color: #444;
+  }
+</style>
+</head>
+<body>
+
+<h2>Daily Cash Collection Dashboard</h2>
+
+<div class="total-box">
+  Total Collection for Date <span id="entryDateDisplay"></span>: Rs. <span id="dailyTotal">0</span>
+</div>
+
+<!-- Data Entry Section -->
+<h3>Add Entry</h3>
+<label for="date">Date:</label>
+<input type="date" id="date" oninput="updateTotalForEntryDate()" />
+<label for="account">Account No (3 digits):</label>
+<input type="tel" id="account" maxlength="3" pattern="\\d{3}" title="3 digit account number" autocomplete="off" oninput="showCumulativeBalance()" />
+<label for="amount">Amount:</label>
+<input type="number" id="amount" min="1" oninput="showCumulativeBalance()" />
+<label for="collector">Collector:</label>
+<select id="collector">
+  <option>Kalpesh</option>
+  <option>Sanjay</option>
+  <option>Supan</option>
+  <option>Vipul</option>
+</select>
+<div id="cumulativeBalance"></div>
+<button onclick="addEntry()">Add Entry</button>
+
+<!-- Unified Filter Inputs -->
+<h3>Filter Records</h3>
+<label for="filterDate">Filter by Date (optional):</label>
+<input type="date" id="filterDate" oninput="filterTable()" />
+<label for="filterAcc">Filter by Account No (optional):</label>
+<input type="text" id="filterAcc" maxlength="3" placeholder="Enter 3-digit account no" autocomplete="off" oninput="filterTable()" />
+
+<!-- Unified Table -->
+<table aria-label="Collection data table with filters">
+  <thead>
+    <tr>
+      <th>Date</th>
+      <th>Account No</th>
+      <th>Amount</th>
+      <th>Collector</th>
+      <th>Edit</th>
+      <th>Delete</th>
+    </tr>
+  </thead>
+  <tbody id="dataTableBody"></tbody>
+</table>
+
+<button onclick="exportExcel()">Generate Excel (Filtered Data)</button>
+
+<script>
+  let data = JSON.parse(localStorage.getItem('collectionData') || '[]');
+
+  function saveData() {
+    localStorage.setItem('collectionData', JSON.stringify(data));
+  }
+
+  // Show cumulative balance for account number entered (total amount till date + new amount)
+  function showCumulativeBalance() {
+    const account = document.getElementById('account').value.trim();
+    const amountStr = document.getElementById('amount').value;
+    const amount = amountStr ? parseFloat(amountStr) : 0;
+    if (!/^\d{3}$/.test(account)) {
+      document.getElementById('cumulativeBalance').innerText = '';
+      return;
+    }
+    let sum = data.reduce((acc, row) => row.account === account ? acc + row.amount : acc, 0);
+    let totalIncludingNew = sum + amount;
+    document.getElementById('cumulativeBalance').innerText = 
+      `Cumulative balance for account ${account} (including new entry): Rs. ${totalIncludingNew.toFixed(2)}`;
+  }
+
+  // Update total collection display for date selected in entry form
+  function updateTotalForEntryDate() {
+    const date = document.getElementById('date').value;
+    document.getElementById('entryDateDisplay').innerText = date || "(none)";
+    if (!date) {
+      document.getElementById('dailyTotal').innerText = '0';
+      return;
+    }
+    let totalForDate = data.reduce((acc, row) => row.date === date ? acc + row.amount : acc, 0);
+    document.getElementById('dailyTotal').innerText = totalForDate.toFixed(2);
+    if (document.getElementById('filterDate').value === date) {
+      filterTable();
+    }
+  }
+
+  function addEntry() {
+    const date = document.getElementById('date').value;
+    const account = document.getElementById('account').value.trim();
+    const amount = parseFloat(document.getElementById('amount').value);
+    const collector = document.getElementById('collector').value;
+
+    if (!date || !account || !amount || !collector) {
+      alert('All fields are required and must be valid.');
+      return;
+    }
+    if (!/^\d{3}$/.test(account)) {
+      alert('Account number must be exactly 3 digits.');
+      return;
+    }
+    // Prevent duplicate account number for same date
+    if (data.find(row => row.date === date && row.account === account)) {
+      alert('This account number is already entered for this date.');
+      return;
+    }
+
+    data.push({ date, account, amount, collector });
+    saveData();
+    alert('Entry added.');
+    document.getElementById('account').value = '';
+    document.getElementById('amount').value = '';
+    document.getElementById('collector').value = 'Kalpesh';
+    document.getElementById('cumulativeBalance').innerText = '';
+    updateTotalForEntryDate();
+    filterTable();
+  }
+
+  function filterTable() {
+    const filterDate = document.getElementById('filterDate').value;
+    const filterAcc = document.getElementById('filterAcc').value.trim();
+    const tbody = document.getElementById('dataTableBody');
+    tbody.innerHTML = '';
+
+    const filtered = data.filter(row => {
+      const matchDate = filterDate ? row.date === filterDate : true;
+      const matchAcc = filterAcc ? row.account === filterAcc : true;
+      return matchDate && matchAcc;
+    });
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6">No data for this filter</td></tr>';
+      return;
+    }
+
+    filtered.forEach(row => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${row.date}</td>
+        <td>${row.account}</td>
+        <td>${row.amount}</td>
+        <td>${row.collector}</td>
+        <td><button onclick="enableEdit('${row.date}','${row.account}',this)">Edit</button></td>
+        <td><button onclick="deleteEntry('${row.date}','${row.account}')">Delete</button></td>`;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function enableEdit(date, account, btn) {
+    const row = btn.parentElement.parentElement;
+    const cells = row.querySelectorAll('td');
+    const entry = data.find(r => r.date === date && r.account === account);
+
+    cells[0].innerHTML = `<input type="date" value="${entry.date}" style="width:100%;" />`;
+    cells[1].innerHTML = `<input type="tel" maxlength="3" value="${entry.account}" pattern="\\d{3}" title="3 digit account number" style="width:100%;" />`;
+    cells[2].innerHTML = `<input type="number" value="${entry.amount}" min="1" style="width:100%;" />`;
+    cells[3].innerHTML = `<select style="width:100%;">
+      <option${entry.collector==='Kalpesh' ? ' selected': ''}>Kalpesh</option>
+      <option${entry.collector==='Sanjay' ? ' selected': ''}>Sanjay</option>
+      <option${entry.collector==='Supan' ? ' selected': ''}>Supan</option>
+      <option${entry.collector==='Vipul' ? ' selected': ''}>Vipul</option>
+    </select>`;
+    btn.textContent = 'Save';
+    btn.onclick = () => saveEdit(entry, row, btn);
+  }
+
+  function saveEdit(entry, row, btn) {
+    const inputs = row.querySelectorAll('input, select');
+    const newDate = inputs[0].value;
+    const newAccount = inputs[1].value.trim();
+    const newAmount = parseFloat(inputs[2].value);
+    const newCollector = inputs[3].value;
+
+    if (!newDate || !newAccount || !newAmount || !newCollector) {
+      alert('All fields are required and must be valid.');
+      return;
+    }
+    if (!/^\d{3}$/.test(newAccount)) {
+      alert('Account number must be exactly 3 digits.');
+      return;
+    }
+
+    const duplicate = data.find((r) => 
+      r.date === newDate && r.account === newAccount && !(r.date === entry.date && r.account === entry.account)
+    );
+    if (duplicate) {
+      alert('This account number is already entered for this date.');
+      return;
+    }
+
+    const index = data.findIndex(r => r.date === entry.date && r.account === entry.account);
+    data[index] = { date: newDate, account: newAccount, amount: newAmount, collector: newCollector };
+    saveData();
+    updateTotalForEntryDate();
+    filterTable();
+  }
+
+  function deleteEntry(date, account) {
+    if (!confirm('Delete this entry?')) return;
+    data = data.filter(row => !(row.date === date && row.account === account));
+    saveData();
+    updateTotalForEntryDate();
+    filterTable();
+  }
+
+  function exportExcel() {
+    const tbody = document.getElementById('dataTableBody');
+    const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => !r.innerText.includes('No data'));
+    if (rows.length === 0) return alert('No data found for this filter.');
+
+    const wsData = [['Date', 'Account Number', 'Amount', 'Collector']];
+    rows.forEach(r => {
+      const cells = r.querySelectorAll('td');
+      wsData.push([cells[0].innerText, '50' + cells[1].innerText, parseFloat(cells[2].innerText), cells[3].innerText]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Collection');
+    XLSX.writeFile(wb, `Collection_FilteredData.xlsx`);
+  }
+
+  // Initialize displays on load
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('collector').value = 'Kalpesh';
+    updateTotalForEntryDate();
+    filterTable();
+  });
+</script>
+
+</body>
+</html>
