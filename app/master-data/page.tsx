@@ -106,10 +106,10 @@ export default function MasterDataPage() {
 
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Master Data</h1>
-          <p className="text-gray-600">Manage parties and account information</p>
+      <div className="w-full">
+        <div className="mb-4 md:mb-6 px-2 md:px-0">
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Master Data</h1>
+          <p className="text-sm md:text-base text-gray-600 mt-1">Manage parties and account information</p>
         </div>
         
         {/* Supabase Configuration Error */}
@@ -147,17 +147,17 @@ export default function MasterDataPage() {
         )}
         
         {/* Add Party Form */}
-        <div className="card mb-6">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+        <div className="card mb-4 md:mb-6">
+          <div className="p-3 md:p-4 border-b border-gray-200">
+            <h2 className="text-lg md:text-xl font-semibold text-gray-800 flex items-center">
+              <svg className="w-4 h-4 md:w-5 md:h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Add New Party
             </h2>
           </div>
-          <div className="p-4">
-            <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="p-3 md:p-4">
+            <form onSubmit={handleSubmit} className="space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
                   Party Name
@@ -191,13 +191,13 @@ export default function MasterDataPage() {
                 />
               </div>
               
-              <div className="flex items-end">
+              <div className="md:flex md:items-end">
                 <button
                   type="submit"
-                  className={`w-full py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 ${
+                  className={`w-full py-2.5 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 font-medium text-sm ${
                     supabaseError 
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500'
+                      ? 'bg-gray-400 cursor-not-allowed text-white' 
+                      : 'bg-gray-900 text-white hover:bg-gray-800 focus:ring-gray-500'
                   }`}
                   disabled={supabaseError ? true : false}
                 >
@@ -210,9 +210,9 @@ export default function MasterDataPage() {
 
         {/* Parties Table */}
         <div className="card">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <div className="p-3 md:p-4 border-b border-gray-200">
+            <h2 className="text-lg md:text-xl font-semibold text-gray-800 flex items-center">
+              <svg className="w-4 h-4 md:w-5 md:h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
               Party List
@@ -231,10 +231,10 @@ export default function MasterDataPage() {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr>
-                    <td colSpan={3} className="px-4 py-4 text-center text-gray-500">
+                    <td colSpan={3} className="px-2 md:px-4 py-4 text-center text-gray-500">
                       <div className="flex justify-center items-center py-4">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mr-2"></div>
-                        <span>Loading data...</span>
+                        <div className="animate-spin rounded-full h-5 w-5 md:h-6 md:w-6 border-b-2 border-gray-600 mr-2"></div>
+                        <span className="text-sm">Loading data...</span>
                       </div>
                     </td>
                   </tr>
@@ -252,23 +252,23 @@ export default function MasterDataPage() {
                 ) : (
                   parties.map((party) => (
                     <tr key={party.id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="px-2 md:px-4 py-3 whitespace-nowrap">
                         <div className="flex items-center">
-                          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-8 h-8 mr-3" />
-                          <div className="text-sm font-medium text-gray-900">{party.name}</div>
+                          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-3 flex-shrink-0" />
+                          <div className="text-xs md:text-sm font-medium text-gray-900 truncate">{party.name}</div>
                         </div>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="badge badge-primary text-xs">{party.account_no}</span>
+                      <td className="px-2 md:px-4 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{party.account_no}</span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-2 md:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
                         <button
                           onClick={() => handleDelete(party.id!)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors duration-300"
+                          className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-colors duration-300 min-h-10"
                           disabled={supabaseError ? true : false}
                           title="Delete party"
                         >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>

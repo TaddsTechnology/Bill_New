@@ -45,11 +45,11 @@ body {
 
 /* Custom styles for better UI */
 .card {
-  @apply bg-white rounded-xl shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg;
+  @apply bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md;
 }
 
 .btn-primary {
-  @apply bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2;
+  @apply bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
 }
 
 .btn-secondary {
@@ -65,7 +65,7 @@ body {
 }
 
 .input-field {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors duration-300;
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition-colors duration-300;
 }
 
 .badge {
@@ -109,12 +109,72 @@ body {
   @apply px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900;
 }
 
-/* Mobile-specific improvements */
+/* Mobile-first responsive design */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+/* Mobile optimizations */
 @media (max-width: 768px) {
   .card {
-    @apply rounded-lg shadow-sm;
+    @apply rounded-lg shadow-sm mx-2;
   }
   
+  .btn-primary, .btn-secondary, .btn-success, .btn-danger {
+    @apply py-2.5 px-4 text-sm min-h-10 w-full;
+  }
+  
+  .input-field {
+    @apply px-3 py-2.5 text-base min-h-10;
+  }
+  
+  .table-cell, .table-cell-strong {
+    @apply px-2 py-3 text-xs;
+  }
+  
+  .table-header {
+    @apply px-2 py-2 text-xs;
+  }
+
+  /* Ensure proper touch targets */
+  button, input, select {
+    @apply min-h-10;
+  }
+
+  /* Fix grid layouts for mobile */
+  .grid-cols-1 {
+    @apply grid-cols-1;
+  }
+  
+  .grid-cols-2 {
+    @apply grid-cols-1;
+  }
+  
+  .grid-cols-3 {
+    @apply grid-cols-1;
+  }
+  
+  .md\:grid-cols-2 {
+    @apply grid-cols-1;
+  }
+  
+  .lg\:grid-cols-3 {
+    @apply grid-cols-1;
+  }
+}
+
+/* Extra small devices */
+@media (max-width: 480px) {
   .btn-primary, .btn-secondary, .btn-success, .btn-danger {
     @apply py-2 px-3 text-sm;
   }
@@ -123,20 +183,12 @@ body {
     @apply px-3 py-2 text-sm;
   }
   
-  .table-cell, .table-cell-strong {
-    @apply px-3 py-2;
+  .badge {
+    @apply px-2 py-0.5 text-xs;
   }
   
-  .table-header {
-    @apply px-3 py-2 text-xs;
-  }
-  
-  /* Reduce padding on mobile */
+  /* Compact spacing */
   .p-4 {
-    @apply p-3;
-  }
-  
-  .p-5 {
     @apply p-3;
   }
   
@@ -144,76 +196,24 @@ body {
     @apply p-4;
   }
   
-  .m-4 {
-    @apply m-3;
-  }
-  
-  .m-5 {
-    @apply m-3;
-  }
-  
-  .m-6 {
-    @apply m-4;
-  }
-  
-  /* Adjust grid spacing for mobile */
   .gap-4 {
-    @apply gap-3;
-  }
-  
-  .gap-5 {
     @apply gap-3;
   }
   
   .gap-6 {
     @apply gap-4;
   }
-}
-
-/* Extra small devices */
-@media (max-width: 480px) {
-  .btn-primary, .btn-secondary, .btn-success, .btn-danger {
-    @apply py-1.5 px-2.5 text-xs;
+  
+  /* Make text more readable on small screens */
+  .text-3xl {
+    @apply text-2xl;
   }
   
-  .input-field {
-    @apply px-2.5 py-1.5 text-xs;
+  .text-2xl {
+    @apply text-xl;
   }
   
-  .badge {
-    @apply px-2 py-0.5 text-xs;
-  }
-  
-  /* Further reduce padding */
-  .p-3 {
-    @apply p-2;
-  }
-  
-  .p-4 {
-    @apply p-2;
-  }
-  
-  .p-5 {
-    @apply p-2;
-  }
-  
-  .p-6 {
-    @apply p-3;
-  }
-  
-  .gap-3 {
-    @apply gap-2;
-  }
-  
-  .gap-4 {
-    @apply gap-2;
-  }
-  
-  .gap-5 {
-    @apply gap-2;
-  }
-  
-  .gap-6 {
-    @apply gap-3;
+  .text-xl {
+    @apply text-lg;
   }
 }
