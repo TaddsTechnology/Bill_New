@@ -13,6 +13,16 @@
   --info: #3b82f6;
 }
 
+/* iOS safe area support for bottom navigation */
+.safe-area-inset-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Ensure main content doesn't get hidden behind fixed bottom nav on mobile */
+.with-bottom-nav {
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom)); /* 4rem = h-16 */
+}
+
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -127,23 +137,23 @@ html {
 /* Mobile optimizations */
 @media (max-width: 768px) {
   .card {
-    @apply rounded-lg shadow-sm mx-2;
+    @apply rounded-lg shadow-sm mx-0;
   }
   
   .btn-primary, .btn-secondary, .btn-success, .btn-danger {
-    @apply py-2.5 px-4 text-sm min-h-10 w-full;
+    @apply py-2.5 px-4 text-sm min-h-10;
   }
   
   .input-field {
-    @apply px-3 py-2.5 text-base min-h-10;
+    @apply px-3 py-2.5 text-base min-h-10 w-full;
   }
   
   .table-cell, .table-cell-strong {
-    @apply px-2 py-3 text-xs;
+    @apply px-1 py-2 text-xs;
   }
   
   .table-header {
-    @apply px-2 py-2 text-xs;
+    @apply px-1 py-2 text-xs;
   }
 
   /* Ensure proper touch targets */
@@ -170,6 +180,46 @@ html {
   
   .lg\:grid-cols-3 {
     @apply grid-cols-1;
+  }
+  
+  /* Prevent horizontal overflow */
+  * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  
+  /* Fix table overflow */
+  table {
+    font-size: 0.75rem;
+    table-layout: fixed;
+  }
+  
+  th, td {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+  
+  /* Mobile table improvements */
+  .mobile-table-container {
+    @apply overflow-x-auto;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .mobile-table {
+    @apply min-w-full;
+    width: max-content;
+    min-width: 600px; /* Ensure minimum width for mobile tables */
+  }
+  
+  /* Mobile text truncation */
+  .mobile-truncate {
+    @apply truncate max-w-16;
+  }
+  
+  /* Mobile card improvements */
+  .mobile-card-padding {
+    @apply p-2;
   }
 }
 

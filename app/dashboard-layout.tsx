@@ -11,12 +11,15 @@ export default function DashboardLayout({
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   const pathname = usePathname()
 
-  // Check if we're on mobile
+  // Check if we're on the client side first
   useEffect(() => {
+    setIsClient(true)
+    
     const checkIsMobile = () => {
-      const mobile = typeof window !== 'undefined' && window.innerWidth < 768
+      const mobile = window.innerWidth < 768
       setIsMobile(mobile)
       // On desktop, sidebar starts open
       if (!mobile) {
@@ -30,7 +33,7 @@ export default function DashboardLayout({
     checkIsMobile()
     
     const handleResize = () => {
-      const nowMobile = typeof window !== 'undefined' && window.innerWidth < 768
+      const nowMobile = window.innerWidth < 768
       const wasMobile = isMobile
       setIsMobile(nowMobile)
       
@@ -44,16 +47,12 @@ export default function DashboardLayout({
       }
     }
     
-    if (typeof window !== 'undefined') {
-      window.addEventListener('resize', handleResize)
-    }
+    window.addEventListener('resize', handleResize)
     
     return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('resize', handleResize)
-      }
+      window.removeEventListener('resize', handleResize)
     }
-  }, [isMobile])
+  }, [])
 
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen)
@@ -67,8 +66,37 @@ export default function DashboardLayout({
     { name: 'Profile', href: '/profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z', mobileIcon: 'M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0z' },
   ]
 
+  // Don't render until client-side hydration is complete
+  if (!isClient) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <div className="flex-1 flex flex-col transition-all duration-300">
+          <header className="bg-white border-b border-gray-200 z-20 sticky top-0">
+            <div className="flex items-center justify-between p-3 sm:p-4">
+              <div className="flex items-center space-x-2 sm:space-x-3">
+                <div className="flex items-center">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 mr-2 bg-gray-900 rounded-lg flex items-center justify-center">
+                    <svg className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h1 className="text-lg sm:text-xl font-semibold text-gray-900">CashFlow</h1>
+                </div>
+              </div>
+            </div>
+          </header>
+          <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 bg-white">
+            <div className="w-full max-w-7xl mx-auto px-1 sm:px-0">
+              {children}
+            </div>
+          </main>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className={`flex ${isMobile ? 'flex-col' : ''} h-screen bg-gray-50`}>
+    <div className={`flex ${isMobile ? 'flex-col' : ''} min-h-screen bg-gray-50`}>
       {/* Desktop Sidebar */}
       {!isMobile && (
         <aside className={`bg-white border-r border-gray-200 z-30 fixed inset-y-0 left-0 transform transition-all duration-300 ease-in-out shadow-sm ${
@@ -156,7 +184,7 @@ export default function DashboardLayout({
       )}
 
       {/* Main content */}
-      <div className={`flex-1 flex flex-col ${isMobile ? 'pb-16' : (isSidebarOpen ? 'ml-64' : 'ml-0')} transition-all duration-300`}>
+      <div className={`flex-1 flex flex-col ${isMobile ? 'with-bottom-nav' : (isSidebarOpen ? 'ml-64' : 'ml-0')} transition-all duration-300`}>
         {/* Header */}
         <header className="bg-white border-b border-gray-200 z-20 sticky top-0">
           <div className="flex items-center justify-between p-3 sm:p-4">
@@ -233,8 +261,8 @@ export default function DashboardLayout({
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6 bg-white">
-          <div className="w-full max-w-7xl mx-auto">
+        <main className="flex-1 overflow-y-auto p-2 sm:p-4 md:p-6 bg-white">
+          <div className="w-full max-w-7xl mx-auto px-1 sm:px-0">
             {children}
           </div>
         </main>

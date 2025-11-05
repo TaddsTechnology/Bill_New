@@ -97,8 +97,8 @@ export default function CollectionsPage() {
   return (
     <DashboardLayout>
       <div className="w-full">
-        <div className="mb-4 md:mb-6 px-2 md:px-0">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Collections History</h1>
+        <div className="mb-4 md:mb-6">
+          <h1 className="text-xl md:text-3xl font-bold text-gray-800">Collections History</h1>
           <p className="text-sm md:text-base text-gray-600 mt-1">View and manage all cash collection entries</p>
         </div>
         
@@ -131,7 +131,7 @@ export default function CollectionsPage() {
             </h2>
           </div>
           <div className="p-3 md:p-4">
-            <form onSubmit={handleFilter} className="space-y-4 md:space-y-0 md:grid md:grid-cols-3 md:gap-4">
+            <form onSubmit={handleFilter} className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
               <div>
                 <label htmlFor="filterDate" className="block text-sm font-medium text-gray-700 mb-1">
                   Filter by Date
@@ -160,17 +160,17 @@ export default function CollectionsPage() {
                 />
               </div>
               
-              <div className="md:flex md:items-end md:space-x-2">
+              <div className="md:col-span-2 lg:col-span-1 flex flex-col md:flex-row md:items-end md:space-x-2 space-y-2 md:space-y-0">
                 <button
                   type="submit"
-                  className="btn-primary w-full md:w-auto mb-2 md:mb-0"
+                  className="btn-primary w-full"
                 >
                   Apply Filter
                 </button>
                 <button
                   type="button"
                   onClick={clearFilters}
-                  className="btn-secondary w-full md:w-auto"
+                  className="btn-secondary w-full"
                 >
                   Clear
                 </button>
@@ -190,16 +190,16 @@ export default function CollectionsPage() {
             </h2>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div className="overflow-x-auto mobile-table-container">
+            <table className="min-w-full divide-y divide-gray-200 mobile-table">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Party</th>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collector</th>
-                  <th scope="col" className="px-2 md:px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Date</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20 sm:w-auto">Party</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Account</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Amount</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Collector</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-12 sm:w-auto">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -228,37 +228,30 @@ export default function CollectionsPage() {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50 transition-colors duration-200">
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap text-xs md:text-sm text-gray-900">
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs text-gray-900 truncate">
                           {formatDate(entry.date)}
                         </td>
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-3 flex-shrink-0" />
-                            <div className="text-xs md:text-sm font-medium text-gray-900 truncate">
-                              {party ? party.name : 'Unknown'}
-                            </div>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3">
+                          <div className="text-xs font-medium text-gray-900 truncate max-w-20">
+                            {party ? party.name : 'Unknown'}
                           </div>
                         </td>
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                            {entry.account_no}
-                          </span>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3">
+                          <span className="text-xs font-mono">{entry.account_no}</span>
                         </td>
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap text-xs md:text-sm font-bold text-green-600">
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs font-bold text-green-600">
                           {formatCurrency(entry.amount)}
                         </td>
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {entry.collector}
-                          </span>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3">
+                          <span className="text-xs truncate">{entry.collector}</span>
                         </td>
-                        <td className="px-2 md:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
                           <button
                             onClick={() => handleDelete(entry.id!)}
-                            className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-colors duration-300 min-h-10"
+                            className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
                             title="Delete entry"
                           >
-                            <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>

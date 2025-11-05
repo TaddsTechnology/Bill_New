@@ -107,8 +107,8 @@ export default function MasterDataPage() {
   return (
     <DashboardLayout>
       <div className="w-full">
-        <div className="mb-4 md:mb-6 px-2 md:px-0">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Master Data</h1>
+        <div className="mb-4 md:mb-6">
+          <h1 className="text-xl md:text-3xl font-bold text-gray-800">Master Data</h1>
           <p className="text-sm md:text-base text-gray-600 mt-1">Manage parties and account information</p>
         </div>
         
@@ -219,13 +219,13 @@ export default function MasterDataPage() {
             </h2>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div className="overflow-x-auto mobile-table-container">
+            <table className="min-w-full divide-y divide-gray-200 mobile-table">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account No</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account No</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -252,23 +252,20 @@ export default function MasterDataPage() {
                 ) : (
                   parties.map((party) => (
                     <tr key={party.id} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-2 md:px-4 py-3 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 md:w-8 md:h-8 mr-2 md:mr-3 flex-shrink-0" />
-                          <div className="text-xs md:text-sm font-medium text-gray-900 truncate">{party.name}</div>
-                        </div>
+                      <td className="px-1 sm:px-4 py-2 sm:py-3">
+                        <div className="text-xs font-medium text-gray-900 truncate">{party.name}</div>
                       </td>
-                      <td className="px-2 md:px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">{party.account_no}</span>
+                      <td className="px-1 sm:px-4 py-2 sm:py-3">
+                        <span className="text-xs font-mono">{party.account_no}</span>
                       </td>
-                      <td className="px-2 md:px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                      <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
                         <button
                           onClick={() => handleDelete(party.id!)}
-                          className="text-red-600 hover:text-red-900 p-2 rounded-lg hover:bg-red-50 transition-colors duration-300 min-h-10"
+                          className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
                           disabled={supabaseError ? true : false}
                           title="Delete party"
                         >
-                          <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>

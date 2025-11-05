@@ -309,8 +309,8 @@ export default function DailyCashCollectionDashboard() {
   return (
     <DashboardLayout>
       <div className="w-full">
-        <div className="mb-4 md:mb-6 px-2 md:px-0">
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800">Daily Cash Collection</h1>
+        <div className="mb-4 md:mb-6">
+          <h1 className="text-xl md:text-3xl font-bold text-gray-800">Daily Cash Collection</h1>
           <p className="text-sm md:text-base text-gray-600 mt-1">Manage and track your daily cash collections</p>
         </div>
         
@@ -430,7 +430,7 @@ export default function DailyCashCollectionDashboard() {
                 <label htmlFor="party" className="block text-sm font-medium text-gray-700 mb-1">
                   Select Party
                 </label>
-                <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex flex-col gap-2">
                   <select
                     id="party"
                     onChange={handlePartySelect}
@@ -447,14 +447,14 @@ export default function DailyCashCollectionDashboard() {
                   <button
                     type="button"
                     onClick={() => setShowPartyForm(!showPartyForm)}
-                    className="bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors duration-300 whitespace-nowrap sm:w-auto w-full"
+                    className="bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors duration-300 whitespace-nowrap w-full"
                     title="Add new party"
                     disabled={supabaseError ? true : false}
                   >
                     <svg className="w-4 h-4 md:w-5 md:h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <span className="sm:hidden">Add New Party</span>
+                    <span>Add New Party</span>
                   </button>
                 </div>
               </div>
@@ -750,16 +750,16 @@ export default function DailyCashCollectionDashboard() {
             </button>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+          <div className="overflow-x-auto mobile-table-container">
+            <table className="min-w-full divide-y divide-gray-200 mobile-table">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Party</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collector</th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Date</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20 sm:w-auto">Party</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Account</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Amount</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Collector</th>
+                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-12 sm:w-auto">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -788,42 +788,31 @@ export default function DailyCashCollectionDashboard() {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50 transition-colors duration-200">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <div className="bg-indigo-100 p-1 rounded mr-2">
-                              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                            <div className="font-medium text-gray-900">{formatDate(entry.date)}</div>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
+                          <div className="text-xs font-medium text-gray-900 truncate">{formatDate(entry.date)}</div>
+                        </td>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">
+                          <div className="truncate max-w-20">
+                            <div className="font-medium text-gray-900 text-xs truncate">{party ? party.name : 'Unknown'}</div>
                           </div>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          <div className="flex items-center">
-                            <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 mr-2" />
-                            <div>
-                              <div className="font-medium text-gray-900">{party ? party.name : 'Unknown'}</div>
-                              <div className="text-gray-500 text-xs">{entry.account_no}</div>
-                            </div>
-                          </div>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
+                          <span className="text-xs font-mono">{entry.account_no}</span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="badge badge-primary text-xs">{entry.account_no}</span>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
+                          <span className="font-bold text-green-600 text-xs">Rs. {entry.amount.toFixed(2)}</span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="font-bold text-green-600">Rs. {entry.amount.toFixed(2)}</span>
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
+                          <span className="text-xs truncate">{entry.collector}</span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="badge badge-success text-xs">{entry.collector}</span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-right text-sm font-medium">
+                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
                           <button
                             onClick={() => handleDelete(entry.id!)}
                             className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors duration-300"
                             disabled={supabaseError ? true : false}
                             title="Delete entry"
                           >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
