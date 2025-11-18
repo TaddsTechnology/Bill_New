@@ -239,23 +239,66 @@ export async function getAllCollectionsForParty(accountNo: string) {
 }
 
 /**
- * Export entries to Excel format
+ * Export entries to Excel format - For Self (Personal Use)
  */
-export async function exportEntriesToExcel(entries: CashCollectionEntry[], parties: Party[]) {
+export async function exportForSelf(entries: CashCollectionEntry[], parties: Party[]) {
   // Create a mapping of account numbers to party names
   const partyMap = new Map<string, string>()
   parties.forEach(party => {
     partyMap.set(party.account_no, party.name)
   })
   
-  // Prepare data for export
-  const exportData = entries.map(entry => ({
-    Date: entry.date,
+  // Prepare data for export with serial numbers
+  const exportData = entries.map((entry, index) => ({
+    'Sr. No': index + 1,
+    'Date': entry.date,
     'Party Name': partyMap.get(entry.account_no) || 'Unknown',
     'Account No': entry.account_no,
-    Amount: entry.amount,
-    Collector: entry.collector
+    'Amount (Rs.)': entry.amount.toFixed(2),
+    'Collector': entry.collector
   }))
   
   return exportData
+}
+
+/**
+ * Export entries to Excel format - For Bank (Professional Format)
+ */
+export async function exportForBank(entries: CashCollectionEntry[], parties: Party[]) {
+  // Create a mapping of account numbers to party names
+  const partyMap = new Map<string, string>()
+  parties.forEach(party => {
+    partyMap.set(party.account_no, party.name)
+  })
+  
+  // Sort entries by date
+  const sortedEntries = [...entries].sort((a, b) => 
+    new Date(a.date).getTime() - new Date(b.date).getTime()
+  )
+  
+  // Calculate running balance
+  let runningBalance = 0
+  const exportData = sortedEntries.map(entry => {
+    runningBalance += entry.amount
+    const partyName = partyMap.get(entry.account_no) || 'Unknown'
+    // Shorten party name for bank format
+    const shortName = partyName.split(' ').slice(0, 2).join(' ')
+    
+    return {
+      'Transaction Date': entry.date,
+      'Account Number': entry.account_no,
+      'Particulars': `Cash Collection - ${shortName}`,
+      'Credit (Rs.)': entry.amount.toFixed(2),
+      'Balance (Rs.)': runningBalance.toFixed(2)
+    }
+  })
+  
+  return exportData
+}
+
+/**
+ * Export entries to Excel format (Legacy - for backward compatibility)
+ */
+export async function exportEntriesToExcel(entries: CashCollectionEntry[], parties: Party[]) {
+  return exportForSelf(entries, parties)
 }

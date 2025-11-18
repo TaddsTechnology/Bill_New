@@ -1,13 +1,16 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import DashboardLayout from '../dashboard-layout'
 import { CashCollectionEntry, Party } from '../../lib/supabaseClient'
 import { 
   getAllEntries, 
   getAllParties, 
   getFilteredEntries,
-  getTotalCollectionForDate
+  getTotalCollectionForDate,
+  exportForSelf,
+  exportForBank
 } from '../../lib/cashCollectionService'
 
 export default function ReportsPage() {
@@ -15,6 +18,7 @@ export default function ReportsPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   
   // Filter state
   const [filterDate, setFilterDate] = useState('')
@@ -120,6 +124,120 @@ export default function ReportsPage() {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-GB') // dd/mm/yyyy format
   }
+  
+  // Export for Personal Use
+  const handleExportForSelf = async () => {
+    try {
+      const exportData = await exportForSelf(entries, parties)
+      
+      // Add summary row
+      const total = entries.reduce((sum, entry) => sum + entry.amount, 0)
+      exportData.push({
+        'Sr. No': '',
+        'Date': '',
+        'Party Name': '',
+        'Account No': 'GRAND TOTAL',
+        'Amount (Rs.)': total.toFixed(2),
+        'Collector': ''
+      })
+      
+      // Create worksheet
+      const ws = XLSX.utils.json_to_sheet(exportData)
+      
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 8 },  // Sr. No
+        { wch: 12 }, // Date
+        { wch: 25 }, // Party Name
+        { wch: 12 }, // Account No
+        { wch: 15 }, // Amount
+        { wch: 12 }  // Collector
+      ]
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Personal Report')
+      
+      // Generate filename
+      const today = new Date().toISOString().split('T')[0]
+      const filename = `For Self.xlsx`
+      
+      // Export to file
+      XLSX.writeFile(wb, filename)
+      
+      setSuccess('Personal report exported successfully!')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError('Failed to export personal report')
+      console.error(err)
+    }
+  }
+  
+  // Export for Bank
+  const handleExportForBank = async () => {
+    try {
+      const exportData = await exportForBank(entries, parties)
+      
+      // Calculate totals
+      const totalCredit = entries.reduce((sum, entry) => sum + entry.amount, 0)
+      const uniqueAccounts = new Set(entries.map(e => e.account_no)).size
+      
+      // Add header rows
+      const headerData = [
+        { 'Transaction Date': 'CASH COLLECTION STATEMENT' },
+        { 'Transaction Date': '' },
+        { 'Transaction Date': 'Company Name: Your Business Name' },
+        { 'Transaction Date': `Period: ${filterDate || 'All Time'}` },
+        { 'Transaction Date': `Report Generated: ${new Date().toLocaleDateString('en-GB')}` },
+        { 'Transaction Date': '' }
+      ]
+      
+      // Add summary footer
+      const footerData = [
+        { 'Transaction Date': '', 'Account Number': '', 'Particulars': 'TOTAL CREDIT', 'Credit (Rs.)': totalCredit.toFixed(2), 'Balance (Rs.)': '' },
+        { 'Transaction Date': '', 'Account Number': '', 'Particulars': 'CLOSING BALANCE', 'Credit (Rs.)': '', 'Balance (Rs.)': totalCredit.toFixed(2) },
+        { 'Transaction Date': '' },
+        { 'Transaction Date': 'SUMMARY:' },
+        { 'Transaction Date': `Total Transactions: ${entries.length}` },
+        { 'Transaction Date': `Total Credit Amount: Rs. ${totalCredit.toFixed(2)}` },
+        { 'Transaction Date': `Number of Unique Accounts: ${uniqueAccounts}` },
+        { 'Transaction Date': '' },
+        { 'Transaction Date': `PREPARED BY: Admin User` },
+        { 'Transaction Date': `DATE: ${new Date().toLocaleDateString('en-GB')}` }
+      ]
+      
+      // Combine all data
+      const fullData = [...headerData, ...exportData, ...footerData]
+      
+      // Create worksheet
+      const ws = XLSX.utils.json_to_sheet(fullData, { skipHeader: false })
+      
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 15 }, // Transaction Date
+        { wch: 12 }, // Account Number
+        { wch: 35 }, // Particulars
+        { wch: 15 }, // Credit
+        { wch: 15 }  // Balance
+      ]
+      
+      // Create workbook
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Bank Statement')
+      
+      // Generate filename
+      const filename = `For Bank.xlsx`
+      
+      // Export to file
+      XLSX.writeFile(wb, filename)
+      
+      setSuccess('Bank report exported successfully!')
+      setTimeout(() => setSuccess(null), 3000)
+    } catch (err) {
+      setError('Failed to export bank report')
+      console.error(err)
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -129,15 +247,85 @@ export default function ReportsPage() {
           <p className="text-gray-600">Detailed insights into your cash collections</p>
         </div>
         
+        {/* Toast Notifications */}
+        {success && (
+          <div className="fixed top-4 right-4 z-50 animate-slide-in">
+            <div className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">{success}</p>
+              </div>
+              <button 
+                onClick={() => setSuccess(null)}
+                className="flex-shrink-0 hover:bg-green-600 rounded p-1 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
         {error && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6 shadow-md flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {error}
+          <div className="fixed top-4 right-4 z-50 animate-slide-in">
+            <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">{error}</p>
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="flex-shrink-0 hover:bg-red-600 rounded p-1 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         )}
         
+        {/* Export Buttons */}
+        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+          <button
+            onClick={handleExportForSelf}
+            disabled={entries.length === 0}
+            className={`flex-1 py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 flex items-center justify-center font-medium shadow-md ${
+              entries.length === 0
+                ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
+                : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 hover:shadow-lg'
+            }`}
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            📊 Export for Personal Use
+          </button>
+          
+          <button
+            onClick={handleExportForBank}
+            disabled={entries.length === 0}
+            className={`flex-1 py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 flex items-center justify-center font-medium shadow-md ${
+              entries.length === 0
+                ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
+                : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 hover:shadow-lg'
+            }`}
+          >
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            🏦 Export for Bank
+          </button>
+        </div>
+
         {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           <div className="card">
