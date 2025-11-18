@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { Party } from '../../lib/supabaseClient'
-import { getAllParties, addParty, deleteParty } from '../../lib/cashCollectionService'
+import { getAllParties, addParty, deleteParty, updateParty } from '../../lib/cashCollectionService'
 
 export default function MasterDataPage() {
   const [parties, setParties] = useState<Party[]>([])
@@ -15,6 +15,11 @@ export default function MasterDataPage() {
   // Form state
   const [name, setName] = useState<string>('')
   const [accountNo, setAccountNo] = useState<string>('')
+  
+  // Edit state
+  const [editingParty, setEditingParty] = useState<Party | null>(null)
+  const [editName, setEditName] = useState<string>('')
+  const [editAccountNo, setEditAccountNo] = useState<string>('')
 
   // Load parties on component mount
   useEffect(() => {
@@ -86,7 +91,60 @@ export default function MasterDataPage() {
     }
   }
 
+  const handleEdit = (party: Party) => {
+    setEditingParty(party)
+    setEditName(party.name)
+    setEditAccountNo(party.account_no)
+  }
+  
+  const handleCancelEdit = () => {
+    setEditingParty(null)
+    setEditName('')
+    setEditAccountNo('')
+  }
+  
+  const handleUpdateParty = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!editingParty) return
+    
+    // Validate inputs
+    if (!editName || !editAccountNo) {
+      setError('Please fill all fields')
+      return
+    }
+    
+    // Validate account number (should be 3 digits)
+    if (editAccountNo.length !== 3 || isNaN(Number(editAccountNo))) {
+      setError('Account No must be a 3-digit number')
+      return
+    }
+    
+    try {
+      const updates = {
+        name: editName,
+        account_no: editAccountNo
+      }
+      
+      const result = await updateParty(editingParty.id!, updates)
+      if (result) {
+        await loadParties()
+        setSuccess('Party updated successfully!')
+        setTimeout(() => setSuccess(null), 3000)
+        handleCancelEdit()
+        setError(null)
+      } else {
+        setError('Failed to update party')
+      }
+    } catch (err) {
+      setError('Failed to update party. Please check your Supabase configuration.')
+      console.error(err)
+    }
+  }
+  
   const handleDelete = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this party?')) return
+    
     try {
       const result = await deleteParty(id)
       if (result) {
@@ -208,6 +266,61 @@ export default function MasterDataPage() {
           </div>
         </div>
 
+        {/* Edit Modal */}
+        {editingParty && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800">Edit Party</h3>
+              </div>
+              <form onSubmit={handleUpdateParty} className="p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Party Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="input-field"
+                    placeholder="Enter party name"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Account No (3 digits)
+                  </label>
+                  <input
+                    type="text"
+                    value={editAccountNo}
+                    onChange={(e) => setEditAccountNo(e.target.value)}
+                    maxLength={3}
+                    className="input-field"
+                    placeholder="123"
+                    required
+                  />
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                  >
+                    Update Party
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Parties Table */}
         <div className="card">
           <div className="p-3 md:p-4 border-b border-gray-200">
@@ -259,16 +372,28 @@ export default function MasterDataPage() {
                         <span className="text-xs font-mono">{party.account_no}</span>
                       </td>
                       <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
-                        <button
-                          onClick={() => handleDelete(party.id!)}
-                          className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
-                          disabled={supabaseError ? true : false}
-                          title="Delete party"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
+                        <div className="flex justify-end space-x-1">
+                          <button
+                            onClick={() => handleEdit(party)}
+                            className="text-blue-600 hover:text-blue-900 p-1 rounded-lg hover:bg-blue-50 transition-colors duration-300"
+                            disabled={supabaseError ? true : false}
+                            title="Edit party"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(party.id!)}
+                            className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
+                            disabled={supabaseError ? true : false}
+                            title="Delete party"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

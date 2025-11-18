@@ -26,9 +26,8 @@ export default function DailyCashCollectionDashboard() {
   
   // State for party management
   const [parties, setParties] = useState<Party[]>([])
-  const [showPartyForm, setShowPartyForm] = useState<boolean>(false)
-  const [newPartyName, setNewPartyName] = useState<string>('')
-  const [newPartyAccountNo, setNewPartyAccountNo] = useState<string>('')
+  const [partySearchTerm, setPartySearchTerm] = useState<string>('')
+  const [showPartyDropdown, setShowPartyDropdown] = useState<boolean>(false)
   
   // State for filtering
   const [filterDate, setFilterDate] = useState<string>('')
@@ -44,6 +43,7 @@ export default function DailyCashCollectionDashboard() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [supabaseError, setSupabaseError] = useState<string | null>(null)
+  const [selectedPartyTotal, setSelectedPartyTotal] = useState<number>(0)
 
   // Load all entries and parties on component mount
   useEffect(() => {
@@ -134,6 +134,16 @@ export default function DailyCashCollectionDashboard() {
         
         // Reload entries
         await loadEntries()
+        
+        // Update selected party total
+        if (accountNo) {
+          const updatedEntries = await getAllEntries()
+          const total = updatedEntries
+            .filter(entry => entry.account_no === accountNo)
+            .reduce((sum, entry) => sum + entry.amount, 0)
+          setSelectedPartyTotal(total)
+        }
+        
         setError(null)
         setSuccess('Entry added successfully!')
         setTimeout(() => setSuccess(null), 3000)
@@ -147,56 +157,37 @@ export default function DailyCashCollectionDashboard() {
   }
 
   // Handle party selection
-  const handlePartySelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const selectedParty = parties.find(party => party.account_no === e.target.value)
-    if (selectedParty) {
-      setAccountNo(selectedParty.account_no)
-      setPartyName(selectedParty.name)
-    }
+  const handlePartySelect = (party: Party) => {
+    setAccountNo(party.account_no)
+    setPartyName(party.name)
+    setPartySearchTerm(`${party.name} (${party.account_no})`)
+    setShowPartyDropdown(false)
+    
+    // Calculate total collection for this party
+    const total = entries
+      .filter(entry => entry.account_no === party.account_no)
+      .reduce((sum, entry) => sum + entry.amount, 0)
+    setSelectedPartyTotal(total)
   }
+  
+  // Filter parties based on search term and exclude parties with today's payment
+  const filteredParties = parties.filter(party => {
+    const searchLower = partySearchTerm.toLowerCase()
+    const matchesSearch = (
+      party.name.toLowerCase().includes(searchLower) ||
+      party.account_no.includes(partySearchTerm)
+    )
+    
+    // Check if this party already has an entry for today
+    const today = new Date().toISOString().split('T')[0]
+    const hasPaymentToday = entries.some(
+      entry => entry.account_no === party.account_no && entry.date === today
+    )
+    
+    // Only show if matches search AND doesn't have payment today
+    return matchesSearch && !hasPaymentToday
+  })
 
-  // Handle adding a new party
-  const handleAddParty = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Validate inputs
-    if (!newPartyName || !newPartyAccountNo) {
-      setError('Please fill all party fields')
-      return
-    }
-    
-    // Validate account number (should be 3 digits)
-    if (newPartyAccountNo.length !== 3 || isNaN(Number(newPartyAccountNo))) {
-      setError('Account No must be a 3-digit number')
-      return
-    }
-    
-    try {
-      const newParty = {
-        name: newPartyName,
-        account_no: newPartyAccountNo
-      }
-      
-      const result = await addParty(newParty)
-      if (result) {
-        // Reset form
-        setNewPartyName('')
-        setNewPartyAccountNo('')
-        setShowPartyForm(false)
-        
-        // Reload parties
-        await loadParties()
-        setError(null)
-        setSuccess('Party added successfully!')
-        setTimeout(() => setSuccess(null), 3000)
-      } else {
-        setError('Failed to add party')
-      }
-    } catch (err) {
-      setError('Failed to add party. Please check your Supabase configuration.')
-      console.error(err)
-    }
-  }
 
   // Handle delete entry
   const handleDelete = async (id: number) => {
@@ -330,26 +321,54 @@ export default function DailyCashCollectionDashboard() {
           </div>
         )}
         
-        {/* Success/Error Messages */}
+        {/* Toast Notifications - Fixed position top-right */}
         {success && (
-          <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 shadow-md flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {success}
+          <div className="fixed top-4 right-4 z-50 animate-slide-in">
+            <div className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">{success}</p>
+              </div>
+              <button 
+                onClick={() => setSuccess(null)}
+                className="flex-shrink-0 hover:bg-green-600 rounded p-1 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         )}
         {error && (
-          <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6 shadow-md flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {error}
+          <div className="fixed top-4 right-4 z-50 animate-slide-in">
+            <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
+              <div className="flex-shrink-0">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-sm">{error}</p>
+              </div>
+              <button 
+                onClick={() => setError(null)}
+                className="flex-shrink-0 hover:bg-red-600 rounded p-1 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
           </div>
         )}
         
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
+        {/* Stats Card */}
+        <div className="grid grid-cols-1 gap-3 md:gap-4 mb-4 md:mb-6">
           <div className="card">
             <div className="p-3 md:p-4">
               <div className="flex items-center">
@@ -361,38 +380,6 @@ export default function DailyCashCollectionDashboard() {
                 <div className="min-w-0 flex-1">
                   <p className="text-gray-500 text-xs md:text-sm truncate">Today&apos;s Collection</p>
                   <p className="text-lg md:text-xl font-bold text-gray-800 truncate">Rs. {totalCollection.toFixed(2)}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="card">
-            <div className="p-3 md:p-4">
-              <div className="flex items-center">
-                <div className="p-2 md:p-3 rounded-lg bg-gray-100 text-gray-700 mr-3 md:mr-4 flex-shrink-0">
-                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-gray-500 text-xs md:text-sm truncate">Total Parties</p>
-                  <p className="text-lg md:text-xl font-bold text-gray-800">{parties.length}</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="card">
-            <div className="p-3 md:p-4">
-              <div className="flex items-center">
-                <div className="p-2 md:p-3 rounded-lg bg-gray-100 text-gray-700 mr-3 md:mr-4 flex-shrink-0">
-                  <svg className="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-gray-500 text-xs md:text-sm truncate">Total Entries</p>
-                  <p className="text-lg md:text-xl font-bold text-gray-800">{entries.length}</p>
                 </div>
               </div>
             </div>
@@ -428,95 +415,54 @@ export default function DailyCashCollectionDashboard() {
               
               <div className="md:col-span-2">
                 <label htmlFor="party" className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Party
+                  Search Party (Name or Account No)
                 </label>
                 <div className="flex flex-col gap-2">
-                  <select
-                    id="party"
-                    onChange={handlePartySelect}
-                    className="flex-1 input-field"
-                    disabled={supabaseError ? true : false}
-                  >
-                    <option value="">Select a party</option>
-                    {parties.map((party) => (
-                      <option key={party.id} value={party.account_no}>
-                        {party.name} ({party.account_no})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => setShowPartyForm(!showPartyForm)}
-                    className="bg-gray-100 text-gray-700 p-2 rounded-lg hover:bg-gray-200 transition-colors duration-300 whitespace-nowrap w-full"
-                    title="Add new party"
-                    disabled={supabaseError ? true : false}
-                  >
-                    <svg className="w-4 h-4 md:w-5 md:h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      id="party"
+                      value={partySearchTerm}
+                      onChange={(e) => {
+                        setPartySearchTerm(e.target.value)
+                        setShowPartyDropdown(true)
+                      }}
+                      onFocus={() => setShowPartyDropdown(true)}
+                      className="flex-1 input-field pr-10"
+                      placeholder="Type party name or account number..."
+                      disabled={supabaseError ? true : false}
+                      autoComplete="off"
+                    />
+                    <svg className="absolute right-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
-                    <span>Add New Party</span>
-                  </button>
+                    
+                    {/* Dropdown list */}
+                    {showPartyDropdown && partySearchTerm && filteredParties.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                        {filteredParties.map((party) => (
+                          <button
+                            key={party.id}
+                            type="button"
+                            onClick={() => handlePartySelect(party)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-gray-100 transition-colors duration-200 border-b border-gray-100 last:border-b-0"
+                          >
+                            <div className="font-medium text-gray-900 text-sm">{party.name}</div>
+                            <div className="text-xs text-gray-500">Account No: {party.account_no}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* No results message */}
+                    {showPartyDropdown && partySearchTerm && filteredParties.length === 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-4">
+                        <p className="text-sm text-gray-500 text-center">No party found</p>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-              
-              {showPartyForm && (
-                <div className="md:col-span-2 bg-gray-50 p-3 md:p-4 rounded-lg">
-                  <h3 className="text-sm md:text-md font-medium text-gray-800 mb-3 flex items-center">
-                    <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Add New Party
-                  </h3>
-                  <form onSubmit={handleAddParty} className="space-y-3 md:space-y-0 md:grid md:grid-cols-3 md:gap-3">
-                    <div>
-                      <label htmlFor="newPartyName" className="block text-sm font-medium text-gray-700 mb-1">
-                        Party Name
-                      </label>
-                      <input
-                        type="text"
-                        id="newPartyName"
-                        value={newPartyName}
-                        onChange={(e) => setNewPartyName(e.target.value)}
-                        className="input-field"
-                        placeholder="Enter party name"
-                        required
-                        disabled={supabaseError ? true : false}
-                      />
-                    </div>
-                    
-                    <div>
-                      <label htmlFor="newPartyAccountNo" className="block text-sm font-medium text-gray-700 mb-1">
-                        Account No (3 digits)
-                      </label>
-                      <input
-                        type="text"
-                        id="newPartyAccountNo"
-                        value={newPartyAccountNo}
-                        onChange={(e) => setNewPartyAccountNo(e.target.value)}
-                        maxLength={3}
-                        className="input-field"
-                        placeholder="123"
-                        required
-                        disabled={supabaseError ? true : false}
-                      />
-                    </div>
-                    
-                    <div className="md:flex md:items-end">
-                      <button
-                        type="submit"
-                        className={`w-full py-2.5 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 font-medium text-sm ${
-                          supabaseError 
-                            ? 'bg-gray-400 cursor-not-allowed text-white' 
-                            : 'bg-gray-900 text-white hover:bg-gray-800 focus:ring-gray-500'
-                        }`}
-                        disabled={supabaseError ? true : false}
-                      >
-                        Add Party
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
               
               <div>
                 <label htmlFor="accountNo" className="block text-sm font-medium text-gray-700 mb-1">
@@ -527,7 +473,7 @@ export default function DailyCashCollectionDashboard() {
                   id="accountNo"
                   value={accountNo}
                   readOnly
-                  className="input-field bg-gray-100"
+                  className="input-field bg-gray-100 text-gray-900 font-medium"
                   placeholder="Select a party"
                   disabled={supabaseError ? true : false}
                 />
@@ -542,7 +488,7 @@ export default function DailyCashCollectionDashboard() {
                   id="partyName"
                   value={partyName}
                   readOnly
-                  className="input-field bg-gray-100"
+                  className="input-field bg-gray-100 text-gray-900 font-medium"
                   placeholder="Select a party"
                   disabled={supabaseError ? true : false}
                 />
@@ -584,7 +530,20 @@ export default function DailyCashCollectionDashboard() {
                 </select>
               </div>
               
-              <div className="md:col-span-2 flex justify-stretch md:justify-end">
+              <div className="md:col-span-2 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                {/* Party Total Collection Display */}
+                {accountNo && partyName && (
+                  <div className="flex items-center space-x-2 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <svg className="w-5 h-5 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                    <div className="flex-1">
+                      <p className="text-xs text-blue-600 font-medium">Total from {partyName}</p>
+                      <p className="text-lg font-bold text-blue-700">Rs. {selectedPartyTotal.toFixed(2)}</p>
+                    </div>
+                  </div>
+                )}
+                
                 <button
                   type="submit"
                   className={`py-2.5 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 flex items-center justify-center font-medium text-sm w-full md:w-auto ${
@@ -604,227 +563,8 @@ export default function DailyCashCollectionDashboard() {
           </div>
         </div>
 
-        {/* Party Report Section */}
-        <div className="card mb-6">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              Party Report
-            </h2>
-          </div>
-          <div className="p-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="reportParty" className="block text-sm font-medium text-gray-700 mb-1">
-                  Select Party for Report
-                </label>
-                <select
-                  id="reportParty"
-                  onChange={(e) => generatePartyReport(e.target.value)}
-                  className="input-field"
-                  disabled={supabaseError ? true : false}
-                >
-                  <option value="">Select a party</option>
-                  {parties.map((party) => (
-                    <option key={`report-${party.id}`} value={party.account_no}>
-                      {party.name} ({party.account_no})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              
-              {partyReport && (
-                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg border border-blue-200">
-                  <h3 className="text-md font-medium text-gray-800 mb-2">
-                    Today&apos;s Collection for {partyReport.name}
-                  </h3>
-                  <p className="text-xl font-bold text-blue-600">
-                    Rs. {partyReport.amount.toFixed(2)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
 
-        {/* Filter Records Section */}
-        <div className="card mb-6">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Filter Records
-            </h2>
-          </div>
-          <div className="p-4">
-            <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="filterDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Date
-                </label>
-                <input
-                  type="date"
-                  id="filterDate"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="input-field"
-                  disabled={supabaseError ? true : false}
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="filterAccountNo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Account No
-                </label>
-                <input
-                  type="text"
-                  id="filterAccountNo"
-                  value={filterAccountNo}
-                  onChange={(e) => setFilterAccountNo(e.target.value)}
-                  maxLength={3}
-                  className="input-field"
-                  placeholder="Enter 3-digit account no"
-                  disabled={supabaseError ? true : false}
-                />
-              </div>
-              
-              <div className="flex items-end space-x-2">
-                <button
-                  type="submit"
-                  className={`py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 flex items-center ${
-                    supabaseError 
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500'
-                  }`}
-                  disabled={supabaseError ? true : false}
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  <span className="hidden sm:inline">Apply</span>
-                  <span className="sm:hidden">Filter</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="py-2 px-4 rounded-lg bg-gray-200 text-gray-800 hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-300 flex items-center"
-                  disabled={supabaseError ? true : false}
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span className="hidden sm:inline">Clear</span>
-                  <span className="sm:hidden">Clear</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
 
-        {/* Entries Table */}
-        <div className="card">
-          <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-3 sm:mb-0">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              Collection Entries
-            </h2>
-            <button
-              onClick={exportToExcel}
-              disabled={entries.length === 0 || supabaseError ? true : false}
-              className={`py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-colors duration-300 flex items-center ${
-                entries.length === 0 || supabaseError
-                  ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500'
-              }`}
-            >
-              <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              <span className="hidden sm:inline">Export to Excel</span>
-              <span className="sm:hidden">Export</span>
-            </button>
-          </div>
-          
-          <div className="overflow-x-auto mobile-table-container">
-            <table className="min-w-full divide-y divide-gray-200 mobile-table">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Date</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20 sm:w-auto">Party</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Account</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Amount</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Collector</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-12 sm:w-auto">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-4 text-center text-gray-500">
-                      <div className="flex justify-center items-center py-4">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mr-2"></div>
-                        <span>Loading data...</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-4 text-center text-gray-500">
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-gray-500">No data for this filter</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  entries.map((entry) => {
-                    const party = parties.find(p => p.account_no === entry.account_no)
-                    return (
-                      <tr key={entry.id} className="hover:bg-gray-50 transition-colors duration-200">
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
-                          <div className="text-xs font-medium text-gray-900 truncate">{formatDate(entry.date)}</div>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm font-medium text-gray-900">
-                          <div className="truncate max-w-20">
-                            <div className="font-medium text-gray-900 text-xs truncate">{party ? party.name : 'Unknown'}</div>
-                          </div>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
-                          <span className="text-xs font-mono">{entry.account_no}</span>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
-                          <span className="font-bold text-green-600 text-xs">Rs. {entry.amount.toFixed(2)}</span>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs sm:text-sm text-gray-500">
-                          <span className="text-xs truncate">{entry.collector}</span>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
-                          <button
-                            onClick={() => handleDelete(entry.id!)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded hover:bg-red-50 transition-colors duration-300"
-                            disabled={supabaseError ? true : false}
-                            title="Delete entry"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
       </div>
     </DashboardLayout>
   )

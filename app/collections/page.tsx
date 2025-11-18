@@ -7,7 +7,8 @@ import {
   getAllEntries, 
   getAllParties, 
   deleteEntry,
-  getFilteredEntries 
+  getFilteredEntries,
+  updateEntry 
 } from '../../lib/cashCollectionService'
 
 export default function CollectionsPage() {
@@ -20,6 +21,12 @@ export default function CollectionsPage() {
   // Filter state
   const [filterDate, setFilterDate] = useState('')
   const [filterAccountNo, setFilterAccountNo] = useState('')
+  
+  // Edit state
+  const [editingEntry, setEditingEntry] = useState<CashCollectionEntry | null>(null)
+  const [editDate, setEditDate] = useState('')
+  const [editAmount, setEditAmount] = useState('')
+  const [editCollector, setEditCollector] = useState('')
 
   useEffect(() => {
     loadData()
@@ -43,6 +50,47 @@ export default function CollectionsPage() {
     }
   }
 
+  const handleEdit = (entry: CashCollectionEntry) => {
+    setEditingEntry(entry)
+    setEditDate(entry.date)
+    setEditAmount(entry.amount.toString())
+    setEditCollector(entry.collector)
+  }
+  
+  const handleCancelEdit = () => {
+    setEditingEntry(null)
+    setEditDate('')
+    setEditAmount('')
+    setEditCollector('')
+  }
+  
+  const handleUpdateEntry = async (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    if (!editingEntry) return
+    
+    try {
+      const updates = {
+        date: editDate,
+        amount: parseFloat(editAmount),
+        collector: editCollector
+      }
+      
+      const result = await updateEntry(editingEntry.id!, updates)
+      if (result) {
+        await loadData()
+        setSuccess('Entry updated successfully!')
+        setTimeout(() => setSuccess(null), 3000)
+        handleCancelEdit()
+      } else {
+        setError('Failed to update entry')
+      }
+    } catch (err) {
+      setError('Failed to update entry')
+      console.error(err)
+    }
+  }
+  
   const handleDelete = async (id: number) => {
     if (!confirm('Are you sure you want to delete this entry?')) return
     
@@ -179,6 +227,75 @@ export default function CollectionsPage() {
           </div>
         </div>
 
+        {/* Edit Modal */}
+        {editingEntry && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+              <div className="p-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-800">Edit Entry</h3>
+              </div>
+              <form onSubmit={handleUpdateEntry} className="p-4 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    className="input-field"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Amount
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    className="input-field"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Collector
+                  </label>
+                  <select
+                    value={editCollector}
+                    onChange={(e) => setEditCollector(e.target.value)}
+                    className="input-field"
+                    required
+                  >
+                    <option value="Kalpesh">Kalpesh</option>
+                    <option value="Sanjay">Sanjay</option>
+                    <option value="Supan">Supan</option>
+                    <option value="Vipul">Vipul</option>
+                  </select>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    className="btn-secondary"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn-primary"
+                  >
+                    Update Entry
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {/* Collections Table */}
         <div className="card">
           <div className="p-3 md:p-4 border-b border-gray-200">
@@ -246,15 +363,26 @@ export default function CollectionsPage() {
                           <span className="text-xs truncate">{entry.collector}</span>
                         </td>
                         <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
-                          <button
-                            onClick={() => handleDelete(entry.id!)}
-                            className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
-                            title="Delete entry"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
+                          <div className="flex justify-end space-x-1">
+                            <button
+                              onClick={() => handleEdit(entry)}
+                              className="text-blue-600 hover:text-blue-900 p-1 rounded-lg hover:bg-blue-50 transition-colors duration-300"
+                              title="Edit entry"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                            <button
+                              onClick={() => handleDelete(entry.id!)}
+                              className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
+                              title="Delete entry"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )

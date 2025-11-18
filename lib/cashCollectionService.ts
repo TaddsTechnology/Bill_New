@@ -148,6 +148,24 @@ export async function addParty(party: Omit<Party, 'id' | 'created_at'>) {
 }
 
 /**
+ * Update a party
+ */
+export async function updateParty(id: number, updates: Partial<Party>) {
+  const { data, error } = await supabase
+    .from('parties')
+    .update(updates)
+    .eq('id', id)
+    .select()
+  
+  if (error) {
+    console.error('Error updating party:', error)
+    return null
+  }
+  
+  return data?.[0] || null
+}
+
+/**
  * Delete a party
  */
 export async function deleteParty(id: number) {
