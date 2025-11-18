@@ -99,8 +99,8 @@ export default function DashboardLayout({
     <div className={`flex ${isMobile ? 'flex-col' : ''} min-h-screen bg-gray-50`}>
       {/* Desktop Sidebar */}
       {!isMobile && (
-        <aside className={`bg-white border-r border-gray-200 z-30 fixed inset-y-0 left-0 transform transition-all duration-300 ease-in-out shadow-sm ${
-          isSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full w-0'
+        <aside className={`bg-white border-r border-gray-200 z-30 fixed inset-y-0 left-0 transition-all duration-300 ease-in-out shadow-sm overflow-hidden ${
+          isSidebarOpen ? 'w-64' : 'w-0'
         }`}>
           <div className="h-full flex flex-col">
             {/* Logo Section */}
