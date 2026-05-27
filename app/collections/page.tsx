@@ -1,383 +1,116 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import DashboardLayout from '../dashboard-layout'
-import { CashCollectionEntry, Party } from '../../lib/supabaseClient'
-import { 
-  getAllEntries, 
-  getAllParties, 
-  deleteEntry,
-  getFilteredEntries,
-  updateEntry 
-} from '../../lib/cashCollectionService'
+import { useCollections } from '../../lib/hooks/useCollections'
+import { useParties } from '../../lib/hooks/useParties'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Spinner } from '../../components/ui/Spinner'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { Modal } from '../../components/ui/Modal'
+
+const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
 
 export default function CollectionsPage() {
-  const [entries, setEntries] = useState<CashCollectionEntry[]>([])
-  const [parties, setParties] = useState<Party[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  
-  // Filter state
+  const { entries, loading, updateEntry, deleteEntry, getFiltered, reload } = useCollections()
+  const { parties } = useParties()
+
   const [filterDate, setFilterDate] = useState('')
-  const [filterAccountNo, setFilterAccountNo] = useState('')
-  
-  // Edit state
-  const [editingEntry, setEditingEntry] = useState<CashCollectionEntry | null>(null)
-  const [editDate, setEditDate] = useState('')
-  const [editAmount, setEditAmount] = useState('')
-  const [editCollector, setEditCollector] = useState('')
+  const [filterAccount, setFilterAccount] = useState('')
 
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
-    try {
-      setLoading(true)
-      const [entriesData, partiesData] = await Promise.all([
-        getAllEntries(),
-        getAllParties()
-      ])
-      
-      setEntries(entriesData)
-      setParties(partiesData)
-    } catch (err) {
-      setError('Failed to load collections data')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleEdit = (entry: CashCollectionEntry) => {
-    setEditingEntry(entry)
-    setEditDate(entry.date)
-    setEditAmount(entry.amount.toString())
-    setEditCollector(entry.collector)
-  }
-  
-  const handleCancelEdit = () => {
-    setEditingEntry(null)
-    setEditDate('')
-    setEditAmount('')
-    setEditCollector('')
-  }
-  
-  const handleUpdateEntry = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!editingEntry) return
-    
-    try {
-      const updates = {
-        date: editDate,
-        amount: parseFloat(editAmount),
-        collector: editCollector
-      }
-      
-      const result = await updateEntry(editingEntry.id!, updates)
-      if (result) {
-        await loadData()
-        setSuccess('Entry updated successfully!')
-        setTimeout(() => setSuccess(null), 3000)
-        handleCancelEdit()
-      } else {
-        setError('Failed to update entry')
-      }
-    } catch (err) {
-      setError('Failed to update entry')
-      console.error(err)
-    }
-  }
-  
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to delete this entry?')) return
-    
-    try {
-      const result = await deleteEntry(id)
-      if (result) {
-        await loadData()
-        setSuccess('Entry deleted successfully!')
-        setTimeout(() => setSuccess(null), 3000)
-      } else {
-        setError('Failed to delete entry')
-      }
-    } catch (err) {
-      setError('Failed to delete entry')
-      console.error(err)
-    }
-  }
+  const [editEntry, setEditEntry] = useState<{ id: number; date: string; amount: string; collector: string } | null>(null)
 
   const handleFilter = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    try {
-      setLoading(true)
-      const data = await getFilteredEntries(
-        filterDate || null, 
-        filterAccountNo || null
-      )
-      setEntries(data)
-    } catch (err) {
-      setError('Failed to filter entries')
-      console.error(err)
-    } finally {
-      setLoading(false)
-    }
+    const data = await getFiltered(filterDate || null, filterAccount || null)
+    return data
   }
 
-  const clearFilters = () => {
-    setFilterDate('')
-    setFilterAccountNo('')
-    loadData()
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editEntry) return
+    await updateEntry(editEntry.id, {
+      date: editEntry.date,
+      amount: parseFloat(editEntry.amount),
+      collector: editEntry.collector,
+    })
+    setEditEntry(null)
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-GB')
-  }
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
 
-  const formatCurrency = (amount: number) => {
-    return `Rs. ${amount.toFixed(2)}`
-  }
+  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
-      <div className="w-full">
-        <div className="mb-4 md:mb-6">
-          <h1 className="text-xl md:text-3xl font-bold text-gray-800">Collections History</h1>
-          <p className="text-sm md:text-base text-gray-600 mt-1">View and manage all cash collection entries</p>
-        </div>
-        
-        {/* Success/Error Messages */}
-        {success && (
-          <div className="bg-green-50 text-green-700 p-3 md:p-4 rounded-lg mb-4 md:mb-6 flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {success}
-          </div>
-        )}
-        {error && (
-          <div className="bg-red-50 text-red-700 p-3 md:p-4 rounded-lg mb-4 md:mb-6 flex items-center">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            {error}
-          </div>
-        )}
-
-        {/* Filter Section */}
-        <div className="card mb-4 md:mb-6">
-          <div className="p-3 md:p-4 border-b border-gray-200">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-4 h-4 md:w-5 md:h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Filter Collections
-            </h2>
-          </div>
-          <div className="p-3 md:p-4">
-            <form onSubmit={handleFilter} className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 lg:grid-cols-3 md:gap-4">
-              <div>
-                <label htmlFor="filterDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Date
-                </label>
-                <input
-                  type="date"
-                  id="filterDate"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="input-field"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="filterAccountNo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Account No
-                </label>
-                <input
-                  type="text"
-                  id="filterAccountNo"
-                  value={filterAccountNo}
-                  onChange={(e) => setFilterAccountNo(e.target.value)}
-                  maxLength={3}
-                  className="input-field"
-                  placeholder="Enter account no"
-                />
-              </div>
-              
-              <div className="md:col-span-2 lg:col-span-1 flex flex-col md:flex-row md:items-end md:space-x-2 space-y-2 md:space-y-0">
-                <button
-                  type="submit"
-                  className="btn-primary w-full"
-                >
-                  Apply Filter
-                </button>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="btn-secondary w-full"
-                >
-                  Clear
-                </button>
-              </div>
-            </form>
-          </div>
+      <div className="w-full space-y-5 animate-fade-in">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Collections</h1>
+          <p className="text-sm text-gray-500 mt-1">View and manage all collection entries</p>
         </div>
 
-        {/* Edit Modal */}
-        {editingEntry && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-              <div className="p-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800">Edit Entry</h3>
-              </div>
-              <form onSubmit={handleUpdateEntry} className="p-4 space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date
-                  </label>
-                  <input
-                    type="date"
-                    value={editDate}
-                    onChange={(e) => setEditDate(e.target.value)}
-                    className="input-field"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Amount
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={editAmount}
-                    onChange={(e) => setEditAmount(e.target.value)}
-                    className="input-field"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Collector
-                  </label>
-                  <select
-                    value={editCollector}
-                    onChange={(e) => setEditCollector(e.target.value)}
-                    className="input-field"
-                    required
-                  >
-                    <option value="Kalpesh">Kalpesh</option>
-                    <option value="Sanjay">Sanjay</option>
-                    <option value="Supan">Supan</option>
-                    <option value="Vipul">Vipul</option>
-                  </select>
-                </div>
-                <div className="flex justify-end space-x-2 pt-4">
-                  <button
-                    type="button"
-                    onClick={handleCancelEdit}
-                    className="btn-secondary"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="btn-primary"
-                  >
-                    Update Entry
-                  </button>
-                </div>
-              </form>
+        <Card padding="md">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-100 mb-4">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
+          </div>
+          <form onSubmit={handleFilter} className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="input-field" />
+            <input type="text" value={filterAccount} onChange={e => setFilterAccount(e.target.value)} maxLength={3} className="input-field" placeholder="Account no..." />
+            <div className="flex gap-2">
+              <Button type="submit" variant="primary" className="flex-1">Apply</Button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setFilterDate(''); setFilterAccount(''); reload() }}>Clear</Button>
             </div>
-          </div>
-        )}
+          </form>
+        </Card>
 
-        {/* Collections Table */}
-        <div className="card">
-          <div className="p-3 md:p-4 border-b border-gray-200">
-            <h2 className="text-lg md:text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-4 h-4 md:w-5 md:h-5 mr-2 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-              All Collections ({entries.length})
-            </h2>
+        <Card padding="md">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-100 mb-4">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">All Collections</h2>
+            <span className="badge badge-primary">{entries.length} total</span>
           </div>
-          
-          <div className="overflow-x-auto mobile-table-container">
-            <table className="min-w-full divide-y divide-gray-200 mobile-table">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Date</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20 sm:w-auto">Party</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Account</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Amount</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16 sm:w-auto">Collector</th>
-                  <th scope="col" className="px-1 sm:px-4 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-12 sm:w-auto">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-2 md:px-4 py-4 text-center text-gray-500">
-                      <div className="flex justify-center items-center py-4">
-                        <div className="animate-spin rounded-full h-5 w-5 md:h-6 md:w-6 border-b-2 border-gray-600 mr-2"></div>
-                        <span className="text-sm">Loading collections...</span>
-                      </div>
-                    </td>
+
+          {entries.length === 0 ? (
+            <EmptyState title="No collections found" message="Try adjusting your filters or add a new collection." />
+          ) : (
+            <div className="overflow-x-auto -mx-4 md:-mx-0">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Party</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Account</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Collector</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
-                ) : entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="px-2 md:px-4 py-4 text-center text-gray-500">
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-gray-500">No collections found</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  entries.map((entry) => {
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {entries.map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
-                      <tr key={entry.id} className="hover:bg-gray-50 transition-colors duration-200">
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs text-gray-900 truncate">
-                          {formatDate(entry.date)}
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3">
-                          <div className="text-xs font-medium text-gray-900 truncate max-w-20">
-                            {party ? party.name : 'Unknown'}
-                          </div>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3">
-                          <span className="text-xs font-mono">{entry.account_no}</span>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-xs font-bold text-green-600">
-                          {formatCurrency(entry.amount)}
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3">
-                          <span className="text-xs truncate">{entry.collector}</span>
-                        </td>
-                        <td className="px-1 sm:px-4 py-2 sm:py-3 text-right">
-                          <div className="flex justify-end space-x-1">
-                            <button
-                              onClick={() => handleEdit(entry)}
-                              className="text-blue-600 hover:text-blue-900 p-1 rounded-lg hover:bg-blue-50 transition-colors duration-300"
-                              title="Edit entry"
-                            >
+                      <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-gray-600">{formatDate(entry.date)}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{party?.name || 'Unknown'}</td>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-500">{entry.account_no}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-green-600 text-right">Rs. {entry.amount.toFixed(2)}</td>
+                        <td className="px-4 py-3"><span className="badge badge-primary">{entry.collector}</span></td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex justify-end gap-1">
+                            <button onClick={() => setEditEntry({ id: entry.id!, date: entry.date, amount: entry.amount.toString(), collector: entry.collector })}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
-                            <button
-                              onClick={() => handleDelete(entry.id!)}
-                              className="text-red-600 hover:text-red-900 p-1 rounded-lg hover:bg-red-50 transition-colors duration-300"
-                              title="Delete entry"
-                            >
+                            <button onClick={() => { if (confirm('Delete this entry?')) deleteEntry(entry.id!) }}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                               </svg>
@@ -386,13 +119,38 @@ export default function CollectionsPage() {
                         </td>
                       </tr>
                     )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       </div>
+
+      <Modal open={!!editEntry} onClose={() => setEditEntry(null)} title="Edit Collection">
+        {editEntry && (
+          <form onSubmit={handleEdit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Date</label>
+              <input type="date" value={editEntry.date} onChange={e => setEditEntry({ ...editEntry, date: e.target.value })} className="input-field" required />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Amount</label>
+              <input type="number" step="0.01" value={editEntry.amount} onChange={e => setEditEntry({ ...editEntry, amount: e.target.value })} className="input-field" required />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1.5">Collector</label>
+              <select value={editEntry.collector} onChange={e => setEditEntry({ ...editEntry, collector: e.target.value })} className="input-field">
+                {COLLECTORS.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="secondary" onClick={() => setEditEntry(null)}>Cancel</Button>
+              <Button type="submit">Update</Button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </DashboardLayout>
   )
 }

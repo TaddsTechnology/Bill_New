@@ -1,4 +1,4 @@
-import { supabase, CashCollectionEntry, Party } from './supabaseClient'
+import { supabase, CashCollectionEntry, Party, Withdrawal } from './supabaseClient'
 
 /**
  * Get all cash collection entries
@@ -239,66 +239,242 @@ export async function getAllCollectionsForParty(accountNo: string) {
 }
 
 /**
+ * Get all withdrawals
+ */
+export async function getAllWithdrawals() {
+  const { data, error } = await supabase
+    .from('withdrawals')
+    .select('*')
+    .order('date', { ascending: false })
+
+  if (error) {
+    console.error('Error fetching withdrawals:', error)
+    return []
+  }
+
+  return data || []
+}
+
+/**
+ * Add a new withdrawal
+ */
+export async function addWithdrawal(withdrawal: Omit<Withdrawal, 'id' | 'created_at'>) {
+  const { data, error } = await supabase
+    .from('withdrawals')
+    .insert([withdrawal])
+    .select()
+
+  if (error) {
+    console.error('Error adding withdrawal:', error)
+    return null
+  }
+
+  return data?.[0] || null
+}
+
+/**
+ * Update an existing withdrawal
+ */
+export async function updateWithdrawal(id: number, updates: Partial<Withdrawal>) {
+  const { data, error } = await supabase
+    .from('withdrawals')
+    .update(updates)
+    .eq('id', id)
+    .select()
+
+  if (error) {
+    console.error('Error updating withdrawal:', error)
+    return null
+  }
+
+  return data?.[0] || null
+}
+
+/**
+ * Delete a withdrawal
+ */
+export async function deleteWithdrawal(id: number) {
+  const { error } = await supabase
+    .from('withdrawals')
+    .delete()
+    .eq('id', id)
+
+  if (error) {
+    console.error('Error deleting withdrawal:', error)
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Get filtered withdrawals
+ */
+export async function getFilteredWithdrawals(date?: string | null, category?: string | null) {
+  let query = supabase
+    .from('withdrawals')
+    .select('*')
+    .order('date', { ascending: false })
+
+  if (date) {
+    query = query.eq('date', date)
+  }
+
+  if (category) {
+    query = query.eq('category', category)
+  }
+
+  const { data, error } = await query
+
+  if (error) {
+    console.error('Error fetching filtered withdrawals:', error)
+    return []
+  }
+
+  return data || []
+}
+
+/**
+ * Get total withdrawals for a specific date
+ */
+export async function getTotalWithdrawalsForDate(date: string) {
+  const { data, error } = await supabase
+    .from('withdrawals')
+    .select('amount')
+    .eq('date', date)
+
+  if (error) {
+    console.error('Error fetching total withdrawals for date:', error)
+    return 0
+  }
+
+  return data.reduce((sum, entry) => sum + entry.amount, 0)
+}
+
+/**
  * Export entries to Excel format - For Self (Personal Use)
  */
-export async function exportForSelf(entries: CashCollectionEntry[], parties: Party[]) {
-  // Create a mapping of account numbers to party names
+export async function exportForSelf(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
   const partyMap = new Map<string, string>()
   parties.forEach(party => {
     partyMap.set(party.account_no, party.name)
   })
-  
-  // Prepare data for export with serial numbers
-  const exportData = entries.map((entry, index) => ({
-    'Sr. No': index + 1,
-    'Date': entry.date,
-    'Party Name': partyMap.get(entry.account_no) || 'Unknown',
-    'Account No': entry.account_no,
-    'Amount (Rs.)': entry.amount.toFixed(2),
-    'Collector': entry.collector
-  }))
-  
+
+  const exportData: Record<string, string>[] = []
+
+  // Collections section
+  entries.forEach((entry, index) => {
+    exportData.push({
+      'Sr. No': String(index + 1),
+      'Date': entry.date,
+      'Party Name': partyMap.get(entry.account_no) || 'Unknown',
+      'Account No': entry.account_no,
+      'Type': 'Collection',
+      'Amount (Rs.)': entry.amount.toFixed(2),
+      'Collector': entry.collector
+    })
+  })
+
+  // Withdrawals section
+  if (withdrawals && withdrawals.length > 0) {
+    const totalCollection = entries.reduce((sum, e) => sum + e.amount, 0)
+    const totalWithdrawal = withdrawals.reduce((sum, w) => sum + w.amount, 0)
+
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': '--- WITHDRAWALS ---', 'Type': '', 'Amount (Rs.)': '', 'Collector': '' })
+
+    withdrawals.forEach((w, index) => {
+      exportData.push({
+      'Sr. No': String(index + 1),
+        'Date': w.date,
+        'Party Name': '',
+        'Account No': w.category,
+        'Type': 'Payment',
+        'Amount (Rs.)': `(${w.amount.toFixed(2)})`,
+        'Collector': w.description
+      })
+    })
+
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': '', 'Type': '', 'Amount (Rs.)': '', 'Collector': '' })
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'NET TOTAL', 'Type': 'TOTAL COLLECTION', 'Amount (Rs.)': totalCollection.toFixed(2), 'Collector': '' })
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'NET TOTAL', 'Type': 'TOTAL WITHDRAWALS', 'Amount (Rs.)': `(${totalWithdrawal.toFixed(2)})`, 'Collector': '' })
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'NET TOTAL', 'Type': 'NET CASH IN HAND', 'Amount (Rs.)': (totalCollection - totalWithdrawal).toFixed(2), 'Collector': '' })
+  } else {
+    // No withdrawals - append grand total
+    const total = entries.reduce((sum, entry) => sum + entry.amount, 0)
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': '', 'Type': '', 'Amount (Rs.)': '', 'Collector': '' })
+    exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'GRAND TOTAL', 'Type': '', 'Amount (Rs.)': total.toFixed(2), 'Collector': '' })
+  }
+
   return exportData
 }
 
 /**
  * Export entries to Excel format - For Bank (Professional Format)
  */
-export async function exportForBank(entries: CashCollectionEntry[], parties: Party[]) {
-  // Create a mapping of account numbers to party names
+export async function exportForBank(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
   const partyMap = new Map<string, string>()
   parties.forEach(party => {
     partyMap.set(party.account_no, party.name)
   })
-  
-  // Sort entries by date
-  const sortedEntries = [...entries].sort((a, b) => 
+
+  // Combine and sort all transactions by date
+  const allTransactions: { date: string; type: string; accountNo: string; particulars: string; credit: number; debit: number }[] = []
+
+  const sortedEntries = [...entries].sort((a, b) =>
     new Date(a.date).getTime() - new Date(b.date).getTime()
   )
-  
-  // Calculate running balance
-  let runningBalance = 0
-  const exportData = sortedEntries.map(entry => {
-    runningBalance += entry.amount
+
+  sortedEntries.forEach(entry => {
     const partyName = partyMap.get(entry.account_no) || 'Unknown'
-    // Shorten party name for bank format
     const shortName = partyName.split(' ').slice(0, 2).join(' ')
-    
+    allTransactions.push({
+      date: entry.date,
+      type: 'Collection',
+      accountNo: entry.account_no,
+      particulars: `Cash Collection - ${shortName}`,
+      credit: entry.amount,
+      debit: 0
+    })
+  })
+
+  if (withdrawals && withdrawals.length > 0) {
+    const sortedWithdrawals = [...withdrawals].sort((a, b) =>
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    )
+    sortedWithdrawals.forEach(w => {
+      allTransactions.push({
+        date: w.date,
+        type: 'Withdrawal',
+        accountNo: w.category,
+        particulars: `Payment - ${w.description}`,
+        credit: 0,
+        debit: w.amount
+      })
+    })
+  }
+
+  // Sort all transactions by date
+  allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+
+  let runningBalance = 0
+  const exportData = allTransactions.map(t => {
+    runningBalance += t.credit - t.debit
     return {
-      'Transaction Date': entry.date,
-      'Account Number': entry.account_no,
-      'Particulars': `Cash Collection - ${shortName}`,
-      'Credit (Rs.)': entry.amount.toFixed(2),
+      'Transaction Date': t.date,
+      'Account Number': t.accountNo,
+      'Particulars': t.particulars,
+      'Credit (Rs.)': t.credit > 0 ? t.credit.toFixed(2) : '',
+      'Debit (Rs.)': t.debit > 0 ? t.debit.toFixed(2) : '',
       'Balance (Rs.)': runningBalance.toFixed(2)
     }
   })
-  
+
   return exportData
 }
 
 /**
  * Export entries to Excel format (Legacy - for backward compatibility)
  */
-export async function exportEntriesToExcel(entries: CashCollectionEntry[], parties: Party[]) {
-  return exportForSelf(entries, parties)
+export async function exportEntriesToExcel(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
+  return exportForSelf(entries, parties, withdrawals)
 }

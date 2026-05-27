@@ -3,37 +3,27 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
-  --primary: #4f46e5;
-  --primary-dark: #4338ca;
-  --secondary: #f3f4f6;
-  --accent: #facc15;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
-  --info: #3b82f6;
+  --primary: #111827;
+  --primary-hover: #1f2937;
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+  --info: #2563eb;
 }
 
-/* iOS safe area support for bottom navigation */
 .safe-area-inset-bottom {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* Ensure main content doesn't get hidden behind fixed bottom nav on mobile */
 .with-bottom-nav {
-  padding-bottom: calc(4rem + env(safe-area-inset-bottom)); /* 4rem = h-16 */
+  padding-bottom: calc(4rem + env(safe-area-inset-bottom));
 }
 
 @theme {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-primary: var(--primary);
-  --color-primary-dark: var(--primary-dark);
-  --color-secondary: var(--secondary);
-  --color-accent: var(--accent);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --color-error: var(--error);
-  --color-info: var(--info);
+  --color-primary-hover: var(--primary-hover);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -53,73 +43,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom styles for better UI */
-.card {
-  @apply bg-white rounded-lg shadow-sm overflow-hidden transition-all duration-300 hover:shadow-md;
-}
-
-.btn-primary {
-  @apply bg-gray-900 hover:bg-gray-800 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
-}
-
-.btn-secondary {
-  @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2;
-}
-
-.btn-success {
-  @apply bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2;
-}
-
-.btn-danger {
-  @apply bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-300 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2;
-}
-
-.input-field {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-gray-900 transition-colors duration-300;
-}
-
-.badge {
-  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
-}
-
-.badge-primary {
-  @apply bg-indigo-100 text-indigo-800;
-}
-
-.badge-success {
-  @apply bg-green-100 text-green-800;
-}
-
-.badge-warning {
-  @apply bg-yellow-100 text-yellow-800;
-}
-
-.badge-error {
-  @apply bg-red-100 text-red-800;
-}
-
-/* Responsive table */
-.table-container {
-  @apply overflow-x-auto rounded-lg shadow;
-}
-
-.table {
-  @apply min-w-full divide-y divide-gray-200;
-}
-
-.table-header {
-  @apply bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider;
-}
-
-.table-cell {
-  @apply px-4 py-3 whitespace-nowrap text-sm text-gray-500;
-}
-
-.table-cell-strong {
-  @apply px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900;
-}
-
-/* Mobile-first responsive design */
 * {
   box-sizing: border-box;
 }
@@ -129,157 +52,80 @@ html {
 }
 
 @media (max-width: 640px) {
-  html {
-    font-size: 14px;
-  }
+  html { font-size: 14px; }
 }
 
-/* Mobile optimizations */
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-slide-in { animation: slideIn 0.3s ease-out; }
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+.animate-slide-up { animation: slideUp 0.25s ease-out; }
+
+.input-field {
+  @apply w-full px-3 py-2.5 border border-gray-200 rounded-xl bg-white text-sm text-gray-900 placeholder-gray-400 shadow-sm transition-all duration-200;
+}
+
+.input-field:focus {
+  @apply border-gray-900 ring-2 ring-gray-900/10 outline-none;
+}
+
+.input-field:disabled {
+  @apply bg-gray-50 text-gray-500 cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-xl transition-all duration-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-900/20 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-gray-100 text-gray-700 text-sm font-medium rounded-xl transition-all duration-200 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-900/10 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-primary { @apply bg-gray-100 text-gray-800; }
+.badge-success { @apply bg-green-100 text-green-800; }
+.badge-warning { @apply bg-amber-100 text-amber-800; }
+.badge-error { @apply bg-red-100 text-red-800; }
+.badge-info { @apply bg-blue-100 text-blue-800; }
+
 @media (max-width: 768px) {
-  .card {
-    @apply rounded-lg shadow-sm mx-0;
-  }
-  
-  .btn-primary, .btn-secondary, .btn-success, .btn-danger {
-    @apply py-2.5 px-4 text-sm min-h-10;
-  }
-  
-  .input-field {
-    @apply px-3 py-2.5 text-base min-h-10 w-full;
-  }
-  
-  .table-cell, .table-cell-strong {
-    @apply px-1 py-2 text-xs;
-  }
-  
-  .table-header {
-    @apply px-1 py-2 text-xs;
-  }
+  .input-field { @apply text-base; }
+  .btn-primary, .btn-secondary, button, input, select { min-height: 2.75rem; }
 
-  /* Ensure proper touch targets */
-  button, input, select {
-    @apply min-h-10;
-  }
+  * { max-width: 100%; box-sizing: border-box; }
 
-  /* Fix grid layouts for mobile */
-  .grid-cols-1 {
-    @apply grid-cols-1;
-  }
-  
-  .grid-cols-2 {
-    @apply grid-cols-1;
-  }
-  
-  .grid-cols-3 {
-    @apply grid-cols-1;
-  }
-  
-  .md\:grid-cols-2 {
-    @apply grid-cols-1;
-  }
-  
-  .lg\:grid-cols-3 {
-    @apply grid-cols-1;
-  }
-  
-  /* Prevent horizontal overflow */
-  * {
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-  
-  /* Fix table overflow */
-  table {
-    font-size: 0.75rem;
-    table-layout: fixed;
-  }
-  
-  th, td {
-    word-wrap: break-word;
-    overflow-wrap: break-word;
-  }
-  
-  /* Mobile table improvements */
+  table { font-size: 0.75rem; table-layout: fixed; }
+  th, td { word-wrap: break-word; overflow-wrap: break-word; }
+
   .mobile-table-container {
     @apply overflow-x-auto;
     scrollbar-width: thin;
     -webkit-overflow-scrolling: touch;
   }
-  
+
   .mobile-table {
     @apply min-w-full;
     width: max-content;
-    min-width: 600px; /* Ensure minimum width for mobile tables */
-  }
-  
-  /* Mobile text truncation */
-  .mobile-truncate {
-    @apply truncate max-w-16;
-  }
-  
-  /* Mobile card improvements */
-  .mobile-card-padding {
-    @apply p-2;
+    min-width: 500px;
   }
 }
 
-/* Toast notification animation */
-@keyframes slideIn {
-  from {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-
-.animate-slide-in {
-  animation: slideIn 0.3s ease-out;
-}
-
-/* Extra small devices */
 @media (max-width: 480px) {
-  .btn-primary, .btn-secondary, .btn-success, .btn-danger {
-    @apply py-2 px-3 text-sm;
-  }
-  
-  .input-field {
-    @apply px-3 py-2 text-sm;
-  }
-  
-  .badge {
-    @apply px-2 py-0.5 text-xs;
-  }
-  
-  /* Compact spacing */
-  .p-4 {
-    @apply p-3;
-  }
-  
-  .p-6 {
-    @apply p-4;
-  }
-  
-  .gap-4 {
-    @apply gap-3;
-  }
-  
-  .gap-6 {
-    @apply gap-4;
-  }
-  
-  /* Make text more readable on small screens */
-  .text-3xl {
-    @apply text-2xl;
-  }
-  
-  .text-2xl {
-    @apply text-xl;
-  }
-  
-  .text-xl {
-    @apply text-lg;
-  }
+  .badge { @apply px-2 py-0.5 text-xs; }
 }

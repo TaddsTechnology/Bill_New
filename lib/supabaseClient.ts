@@ -10,6 +10,16 @@ export type CashCollectionEntry = {
   created_at?: string
 }
 
+// Define type for withdrawal entries
+export type Withdrawal = {
+  id?: number
+  date: string
+  amount: number
+  description: string
+  category: string
+  created_at?: string
+}
+
 // Define type for party information
 export type Party = {
   id?: number
@@ -21,7 +31,7 @@ export type Party = {
 // Get Supabase URL and anon key from environment variables
 // You'll need to set these in your .env.local file
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
 
 // Validate environment variables
 if (!supabaseUrl || supabaseUrl === 'your_actual_supabase_project_url_here') {
@@ -29,7 +39,7 @@ if (!supabaseUrl || supabaseUrl === 'your_actual_supabase_project_url_here') {
 }
 
 if (!supabaseAnonKey || supabaseAnonKey === 'your_actual_supabase_anon_key_here') {
-  console.warn('⚠️  NEXT_PUBLIC_SUPABASE_ANON_KEY is not set or is still the placeholder value')
+  console.warn('⚠️  NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY is not set or is still the placeholder value')
 }
 
 // Create and export the Supabase client

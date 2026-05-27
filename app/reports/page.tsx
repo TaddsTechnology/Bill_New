@@ -1,595 +1,246 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import DashboardLayout from '../dashboard-layout'
-import { CashCollectionEntry, Party } from '../../lib/supabaseClient'
-import { 
-  getAllEntries, 
-  getAllParties, 
-  getFilteredEntries,
-  getTotalCollectionForDate,
-  exportForSelf,
-  exportForBank
-} from '../../lib/cashCollectionService'
+import { supabase, type CashCollectionEntry, type Party, type Withdrawal } from '../../lib/supabaseClient'
+import { useToast } from '../../lib/hooks/useToast'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { StatsCard } from '../../components/ui/StatsCard'
+import { Spinner } from '../../components/ui/Spinner'
+import { EmptyState } from '../../components/ui/EmptyState'
+import { exportForSelf, exportForBank } from '../../lib/cashCollectionService'
 
 export default function ReportsPage() {
   const [entries, setEntries] = useState<CashCollectionEntry[]>([])
   const [parties, setParties] = useState<Party[]>([])
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
-  
-  // Filter state
   const [filterDate, setFilterDate] = useState('')
-  const [filterAccountNo, setFilterAccountNo] = useState('')
-  
-  // Report data
-  const [totalCollection, setTotalCollection] = useState(0)
-  const [partyCollections, setPartyCollections] = useState<{name: string, amount: number}[]>([])
+  const [filterAccount, setFilterAccount] = useState('')
+  const { addToast } = useToast()
 
-  // Load data on component mount
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [entriesData, partiesData] = await Promise.all([
-        getAllEntries(),
-        getAllParties()
+      const [ed, pd, wd] = await Promise.all([
+        supabase.from('cash_collections').select('*').order('date', { ascending: false }),
+        supabase.from('parties').select('*').order('name', { ascending: true }),
+        supabase.from('withdrawals').select('*').order('date', { ascending: false }),
       ])
-      
-      setEntries(entriesData)
-      setParties(partiesData)
-      
-      // Calculate total collection for today
-      const today = new Date().toISOString().split('T')[0]
-      const total = await getTotalCollectionForDate(today)
-      setTotalCollection(total)
-      
-      // Calculate collections by party
-      calculatePartyCollections(entriesData, partiesData)
-    } catch (err) {
-      setError('Failed to load data')
-      console.error(err)
+      setEntries(ed.data || [])
+      setParties(pd.data || [])
+      setWithdrawals(wd.data || [])
+    } catch {
+      addToast('Failed to load report data', 'error')
     } finally {
       setLoading(false)
     }
-  }
+  }, [addToast])
 
-  const calculatePartyCollections = (entriesData: CashCollectionEntry[], partiesData: Party[]) => {
-    // Create a map of account numbers to party names
-    const partyMap = new Map<string, string>()
-    partiesData.forEach(party => {
-      partyMap.set(party.account_no, party.name)
-    })
-    
-    // Calculate total collections by party
-    const collectionsMap = new Map<string, number>()
-    entriesData.forEach(entry => {
-      const currentAmount = collectionsMap.get(entry.account_no) || 0
-      collectionsMap.set(entry.account_no, currentAmount + entry.amount)
-    })
-    
-    // Convert to array format
-    const partyCollectionsData = Array.from(collectionsMap.entries()).map(([accountNo, amount]) => ({
-      name: partyMap.get(accountNo) || `Unknown (${accountNo})`,
-      amount
-    }))
-    
-    setPartyCollections(partyCollectionsData)
-  }
+  useEffect(() => { loadData() }, [loadData])
 
   const handleFilter = async (e: React.FormEvent) => {
     e.preventDefault()
-    
     try {
       setLoading(true)
-      const data = await getFilteredEntries(
-        filterDate || null, 
-        filterAccountNo || null
-      )
-      setEntries(data)
-      
-      // Calculate total for the filtered date if date filter is applied
-      if (filterDate) {
-        const total = await getTotalCollectionForDate(filterDate)
-        setTotalCollection(total)
-      } else {
-        // If no date filter, show total for today
-        const today = new Date().toISOString().split('T')[0]
-        const total = await getTotalCollectionForDate(today)
-        setTotalCollection(total)
-      }
-      
-      // Recalculate party collections based on filtered data
-      calculatePartyCollections(data, parties)
-    } catch (err) {
-      setError('Failed to filter entries')
-      console.error(err)
+      let eq = supabase.from('cash_collections').select('*').order('date', { ascending: false })
+      if (filterDate) eq = eq.eq('date', filterDate)
+      if (filterAccount) eq = eq.eq('account_no', filterAccount)
+      const { data } = await eq
+      setEntries(data || [])
+    } catch {
+      addToast('Failed to filter', 'error')
     } finally {
       setLoading(false)
     }
   }
 
-  const clearFilters = async () => {
-    setFilterDate('')
-    setFilterAccountNo('')
-    loadData()
+  const totalCollection = useMemo(() => entries.reduce((s, e) => s + e.amount, 0), [entries])
+  const totalWithdrawal = useMemo(() => withdrawals.reduce((s, w) => s + w.amount, 0), [withdrawals])
+
+  const partyCollections = useMemo(() => {
+    const map = new Map<string, number>()
+    entries.forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
+    const pmap = new Map(parties.map(p => [p.account_no, p.name]))
+    return Array.from(map.entries()).map(([ac, amt]) => ({ name: pmap.get(ac) || `Unknown (${ac})`, amount: amt }))
+  }, [entries, parties])
+
+  const exportSelf = async () => {
+    const data = await exportForSelf(entries, parties, withdrawals)
+    const ws = XLSX.utils.json_to_sheet(data)
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Personal Report')
+    XLSX.writeFile(wb, 'For Self.xlsx')
+    addToast('Personal report exported', 'success')
   }
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleDateString('en-GB') // dd/mm/yyyy format
+  const exportBank = async () => {
+    const exportData = await exportForBank(entries, parties, withdrawals)
+    const totalCredit = entries.reduce((s, e) => s + e.amount, 0)
+    const totalDebit = withdrawals.reduce((s, w) => s + w.amount, 0)
+    const uniqueAcc = new Set(entries.map(e => e.account_no)).size
+    const netBal = totalCredit - totalDebit
+
+    const row = () => ({ 'Transaction Date': '', 'Account Number': '', 'Particulars': '', 'Credit (Rs.)': '', 'Debit (Rs.)': '', 'Balance (Rs.)': '' })
+
+    const header = [
+      { ...row(), 'Transaction Date': 'CASH COLLECTION STATEMENT' },
+      { ...row(), 'Transaction Date': '' },
+      { ...row(), 'Transaction Date': `Generated: ${new Date().toLocaleDateString('en-GB')}` },
+      { ...row(), 'Transaction Date': '' },
+    ]
+
+    const footer = [
+      { ...row(), 'Particulars': 'TOTAL CREDIT', 'Credit (Rs.)': totalCredit.toFixed(2) },
+      { ...row(), 'Particulars': 'TOTAL DEBITS', 'Debit (Rs.)': totalDebit.toFixed(2) },
+      { ...row(), 'Particulars': 'NET BALANCE', 'Balance (Rs.)': netBal.toFixed(2) },
+      { ...row() },
+      { ...row(), 'Transaction Date': 'SUMMARY' },
+      { ...row(), 'Transaction Date': `Collections: ${entries.length}` },
+      { ...row(), 'Transaction Date': `Withdrawals: ${withdrawals.length}` },
+      { ...row(), 'Transaction Date': `Net Cash in Hand: Rs. ${netBal.toFixed(2)}` },
+      { ...row(), 'Transaction Date': `Unique Accounts: ${uniqueAcc}` },
+    ]
+
+    const ws = XLSX.utils.json_to_sheet([...header, ...exportData, ...footer], { skipHeader: false })
+    ws['!cols'] = [{ wch: 15 }, { wch: 12 }, { wch: 35 }, { wch: 15 }, { wch: 15 }, { wch: 15 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Bank Statement')
+    XLSX.writeFile(wb, 'For Bank.xlsx')
+    addToast('Bank report exported', 'success')
   }
-  
-  // Export for Personal Use
-  const handleExportForSelf = async () => {
-    try {
-      const exportData = await exportForSelf(entries, parties)
-      
-      // Add summary row
-      const total = entries.reduce((sum, entry) => sum + entry.amount, 0)
-      exportData.push({
-        'Sr. No': '',
-        'Date': '',
-        'Party Name': '',
-        'Account No': 'GRAND TOTAL',
-        'Amount (Rs.)': total.toFixed(2),
-        'Collector': ''
-      })
-      
-      // Create worksheet
-      const ws = XLSX.utils.json_to_sheet(exportData)
-      
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 8 },  // Sr. No
-        { wch: 12 }, // Date
-        { wch: 25 }, // Party Name
-        { wch: 12 }, // Account No
-        { wch: 15 }, // Amount
-        { wch: 12 }  // Collector
-      ]
-      
-      // Create workbook
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Personal Report')
-      
-      // Generate filename
-      const today = new Date().toISOString().split('T')[0]
-      const filename = `For Self.xlsx`
-      
-      // Export to file
-      XLSX.writeFile(wb, filename)
-      
-      setSuccess('Personal report exported successfully!')
-      setTimeout(() => setSuccess(null), 3000)
-    } catch (err) {
-      setError('Failed to export personal report')
-      console.error(err)
-    }
-  }
-  
-  // Export for Bank
-  const handleExportForBank = async () => {
-    try {
-      const exportData = await exportForBank(entries, parties)
-      
-      // Calculate totals
-      const totalCredit = entries.reduce((sum, entry) => sum + entry.amount, 0)
-      const uniqueAccounts = new Set(entries.map(e => e.account_no)).size
-      
-      // Add header rows
-      const headerData = [
-        { 'Transaction Date': 'CASH COLLECTION STATEMENT' },
-        { 'Transaction Date': '' },
-        { 'Transaction Date': 'Company Name: Your Business Name' },
-        { 'Transaction Date': `Period: ${filterDate || 'All Time'}` },
-        { 'Transaction Date': `Report Generated: ${new Date().toLocaleDateString('en-GB')}` },
-        { 'Transaction Date': '' }
-      ]
-      
-      // Add summary footer
-      const footerData = [
-        { 'Transaction Date': '', 'Account Number': '', 'Particulars': 'TOTAL CREDIT', 'Credit (Rs.)': totalCredit.toFixed(2), 'Balance (Rs.)': '' },
-        { 'Transaction Date': '', 'Account Number': '', 'Particulars': 'CLOSING BALANCE', 'Credit (Rs.)': '', 'Balance (Rs.)': totalCredit.toFixed(2) },
-        { 'Transaction Date': '' },
-        { 'Transaction Date': 'SUMMARY:' },
-        { 'Transaction Date': `Total Transactions: ${entries.length}` },
-        { 'Transaction Date': `Total Credit Amount: Rs. ${totalCredit.toFixed(2)}` },
-        { 'Transaction Date': `Number of Unique Accounts: ${uniqueAccounts}` },
-        { 'Transaction Date': '' },
-        { 'Transaction Date': `PREPARED BY: Admin User` },
-        { 'Transaction Date': `DATE: ${new Date().toLocaleDateString('en-GB')}` }
-      ]
-      
-      // Combine all data
-      const fullData = [...headerData, ...exportData, ...footerData]
-      
-      // Create worksheet
-      const ws = XLSX.utils.json_to_sheet(fullData, { skipHeader: false })
-      
-      // Set column widths
-      ws['!cols'] = [
-        { wch: 15 }, // Transaction Date
-        { wch: 12 }, // Account Number
-        { wch: 35 }, // Particulars
-        { wch: 15 }, // Credit
-        { wch: 15 }  // Balance
-      ]
-      
-      // Create workbook
-      const wb = XLSX.utils.book_new()
-      XLSX.utils.book_append_sheet(wb, ws, 'Bank Statement')
-      
-      // Generate filename
-      const filename = `For Bank.xlsx`
-      
-      // Export to file
-      XLSX.writeFile(wb, filename)
-      
-      setSuccess('Bank report exported successfully!')
-      setTimeout(() => setSuccess(null), 3000)
-    } catch (err) {
-      setError('Failed to export bank report')
-      console.error(err)
-    }
-  }
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
+
+  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
-      <div className="max-w-6xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-gray-800">Reports & Analytics</h1>
-          <p className="text-gray-600">Detailed insights into your cash collections</p>
-        </div>
-        
-        {/* Toast Notifications */}
-        {success && (
-          <div className="fixed top-4 right-4 z-50 animate-slide-in">
-            <div className="bg-green-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
-              <div className="flex-shrink-0">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-sm">{success}</p>
-              </div>
-              <button 
-                onClick={() => setSuccess(null)}
-                className="flex-shrink-0 hover:bg-green-600 rounded p-1 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-        {error && (
-          <div className="fixed top-4 right-4 z-50 animate-slide-in">
-            <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 min-w-[300px]">
-              <div className="flex-shrink-0">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-sm">{error}</p>
-              </div>
-              <button 
-                onClick={() => setError(null)}
-                className="flex-shrink-0 hover:bg-red-600 rounded p-1 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {/* Export Buttons */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
-          <button
-            onClick={handleExportForSelf}
-            disabled={entries.length === 0}
-            className={`flex-1 py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 flex items-center justify-center font-medium shadow-md ${
-              entries.length === 0
-                ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
-                : 'bg-green-600 text-white hover:bg-green-700 focus:ring-green-500 hover:shadow-lg'
-            }`}
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            📊 Export for Personal Use
-          </button>
-          
-          <button
-            onClick={handleExportForBank}
-            disabled={entries.length === 0}
-            className={`flex-1 py-3 px-6 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 flex items-center justify-center font-medium shadow-md ${
-              entries.length === 0
-                ? 'bg-gray-300 cursor-not-allowed text-gray-500' 
-                : 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 hover:shadow-lg'
-            }`}
-          >
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-            </svg>
-            🏦 Export for Bank
-          </button>
+      <div className="w-full space-y-5 animate-fade-in">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Reports</h1>
+          <p className="text-sm text-gray-500 mt-1">Overview and analytics of your cash flow</p>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          <div className="card">
-            <div className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-indigo-100 text-indigo-600 mr-4">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-sm">Total Collection</p>
-                  <p className="text-xl font-bold text-gray-800">
-                    Rs. {totalCollection.toFixed(2)}
-                  </p>
-                  <p className="text-gray-500 text-sm mt-1">
-                    {filterDate ? `For ${formatDate(filterDate)}` : 'Today'}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="card">
-            <div className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-green-100 text-green-600 mr-4">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-sm">Total Parties</p>
-                  <p className="text-xl font-bold text-gray-800">
-                    {parties.length}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="card">
-            <div className="p-4">
-              <div className="flex items-center">
-                <div className="p-3 rounded-lg bg-blue-100 text-blue-600 mr-4">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-                <div>
-                  <p className="text-gray-500 text-sm">Total Entries</p>
-                  <p className="text-xl font-bold text-gray-800">
-                    {entries.length}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <StatsCard label="Total Collection" value={`Rs. ${totalCollection.toFixed(2)}`} color="green"
+            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>} />
+          <StatsCard label="Total Withdrawals" value={`Rs. ${totalWithdrawal.toFixed(2)}`} color="red"
+            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+            </svg>} />
+          <StatsCard label="Net Cash in Hand" value={`Rs. ${(totalCollection - totalWithdrawal).toFixed(2)}`} color="blue"
+            icon={<svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>} />
         </div>
-        
-        {/* Filter Section */}
-        <div className="card mb-6">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-              </svg>
-              Filter Data
-            </h2>
-          </div>
-          <div className="p-4">
-            <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="filterDate" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Date
-                </label>
-                <input
-                  type="date"
-                  id="filterDate"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="input-field"
-                />
-              </div>
-              
-              <div>
-                <label htmlFor="filterAccountNo" className="block text-sm font-medium text-gray-700 mb-1">
-                  Filter by Account No
-                </label>
-                <input
-                  type="text"
-                  id="filterAccountNo"
-                  value={filterAccountNo}
-                  onChange={(e) => setFilterAccountNo(e.target.value)}
-                  maxLength={3}
-                  className="input-field"
-                  placeholder="Enter 3-digit account no"
-                />
-              </div>
-              
-              <div className="flex items-end space-x-2">
-                <button
-                  type="submit"
-                  className="btn-primary flex items-center w-full sm:w-auto justify-center"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
-                  </svg>
-                  <span className="hidden sm:inline">Apply</span>
-                  <span className="sm:hidden">Filter</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="btn-secondary flex items-center w-full sm:w-auto justify-center"
-                >
-                  <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  <span className="hidden sm:inline">Clear</span>
-                  <span className="sm:hidden">Clear</span>
-                </button>
-              </div>
-            </form>
-          </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button onClick={exportSelf} variant="success" size="lg" className="flex-1" disabled={entries.length === 0}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Export for Personal Use
+          </Button>
+          <Button onClick={exportBank} variant="primary" size="lg" className="flex-1" disabled={entries.length === 0}>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            Export for Bank
+          </Button>
         </div>
-        
-        {/* Party Collections Report */}
-        <div className="card mb-6">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-              Collections by Party
-            </h2>
+
+        <Card padding="md">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-100 mb-4">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Party Name</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Collection</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {partyCollections.length === 0 ? (
-                  <tr>
-                    <td colSpan={2} className="px-4 py-4 text-center text-gray-500">
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-gray-500">No data available</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  partyCollections.map((party, index) => (
-                    <tr key={index} className="hover:bg-gray-50 transition-colors duration-200">
-                      <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                        <div className="flex items-center">
-                          <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 mr-2" />
-                          <div>{party.name}</div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                        <span className="font-bold text-green-600">Rs. {party.amount.toFixed(2)}</span>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="input-field" />
+            <input type="text" value={filterAccount} onChange={e => setFilterAccount(e.target.value)} maxLength={3} className="input-field" placeholder="Account no..." />
+            <div className="flex gap-2">
+              <Button type="submit" variant="primary" className="flex-1">Apply</Button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setFilterDate(''); setFilterAccount(''); loadData() }}>Clear</Button>
+            </div>
+          </form>
+        </Card>
+
+        <Card padding="md">
+          <div className="flex items-center gap-2 pb-3 border-b border-gray-100 mb-4">
+            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <h2 className="text-lg font-semibold text-gray-900">Collections by Party</h2>
           </div>
-        </div>
-        
-        {/* Entries Table */}
-        <div className="card">
-          <div className="p-4 border-b border-gray-200 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-xl font-semibold text-gray-800 flex items-center mb-3 sm:mb-0">
-              <svg className="w-5 h-5 mr-2 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          {partyCollections.length === 0 ? (
+            <EmptyState title="No data" message="No collections recorded yet." />
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {partyCollections.map((p, i) => (
+                <div key={i} className="flex items-center justify-between py-3 px-1 hover:bg-gray-50/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500">
+                      {p.name.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="text-sm font-medium text-gray-900">{p.name}</span>
+                  </div>
+                  <span className="text-sm font-semibold text-green-600">Rs. {p.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <Card padding="md">
+          <div className="flex items-center justify-between pb-3 border-b border-gray-100 mb-4">
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
-              Collection Entries
-            </h2>
-            <div className="text-sm text-gray-500">
-              Showing {entries.length} entries
+              <h2 className="text-lg font-semibold text-gray-900">Collection Entries</h2>
+              <span className="badge badge-primary">{entries.length}</span>
             </div>
           </div>
-          
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Party</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
-                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Collector</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-4 text-center text-gray-500">
-                      <div className="flex justify-center items-center py-4">
-                        <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mr-2"></div>
-                        <span>Loading data...</span>
-                      </div>
-                    </td>
+
+          {entries.length === 0 ? (
+            <EmptyState title="No entries for this filter" message="Try adjusting your filters." />
+          ) : (
+            <div className="overflow-x-auto -mx-4 md:-mx-0">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Date</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Party</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Account</th>
+                    <th className="text-right px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</th>
+                    <th className="text-left px-4 py-3 text-xs font-medium text-gray-400 uppercase tracking-wider">Collector</th>
                   </tr>
-                ) : entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-4 text-center text-gray-500">
-                      <div className="flex flex-col items-center justify-center py-4">
-                        <svg className="w-10 h-10 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                        <p className="text-gray-500">No data for this filter</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  entries.map((entry) => {
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {entries.map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
-                      <tr key={entry.id} className="hover:bg-gray-50 transition-colors duration-200">
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <div className="flex items-center">
-                            <div className="bg-indigo-100 p-1 rounded mr-2">
-                              <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                              </svg>
-                            </div>
-                            <div className="font-medium text-gray-900">{formatDate(entry.date)}</div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
-                          <div className="flex items-center">
-                            <div className="bg-gray-200 border-2 border-dashed rounded-xl w-6 h-6 mr-2" />
-                            <div>
-                              <div className="font-medium text-gray-900">{party ? party.name : 'Unknown'}</div>
-                              <div className="text-gray-500 text-xs">{entry.account_no}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="badge badge-primary text-xs">{entry.account_no}</span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="font-bold text-green-600">Rs. {entry.amount.toFixed(2)}</span>
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-500">
-                          <span className="badge badge-success text-xs">{entry.collector}</span>
-                        </td>
+                      <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
+                        <td className="px-4 py-3 text-sm text-gray-600">{formatDate(entry.date)}</td>
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{party?.name || 'Unknown'}</td>
+                        <td className="px-4 py-3 text-sm font-mono text-gray-500">{entry.account_no}</td>
+                        <td className="px-4 py-3 text-sm font-semibold text-green-600 text-right">Rs. {entry.amount.toFixed(2)}</td>
+                        <td className="px-4 py-3"><span className="badge badge-primary">{entry.collector}</span></td>
                       </tr>
                     )
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
       </div>
     </DashboardLayout>
   )
