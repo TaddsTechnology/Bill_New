@@ -67,12 +67,13 @@ export function useWithdrawals() {
     return true
   }, [load, addToast])
 
-  const getFiltered = useCallback(async (date?: string | null, category?: string | null) => {
+  const getFiltered = useCallback(async (date?: string | null, accountNo?: string | null) => {
     let query = supabase.from('withdrawals').select('*').order('date', { ascending: false })
     if (date) query = query.eq('date', date)
-    if (category) query = query.eq('category', category)
+    if (accountNo) query = query.eq('account_no', accountNo)
     const { data, error } = await query
     if (error) { addToast('Failed to filter', 'error'); return [] }
+    setWithdrawals(data || [])
     return data || []
   }, [addToast])
 

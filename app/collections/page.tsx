@@ -4,11 +4,13 @@ import { useState } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useCollections } from '../../lib/hooks/useCollections'
 import { useParties } from '../../lib/hooks/useParties'
+import { useInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
+import { TableSkeleton } from '../../components/ui/TableSkeleton'
 
 const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
 
@@ -18,13 +20,11 @@ export default function CollectionsPage() {
 
   const [filterDate, setFilterDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
-
   const [editEntry, setEditEntry] = useState<{ id: number; date: string; amount: string; collector: string } | null>(null)
 
   const handleFilter = async (e: React.FormEvent) => {
     e.preventDefault()
-    const data = await getFiltered(filterDate || null, filterAccount || null)
-    return data
+    await getFiltered(filterDate || null, filterAccount || null)
   }
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -39,6 +39,12 @@ export default function CollectionsPage() {
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
+
+  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
+    totalItems: entries.length,
+    initialBatch: 20,
+    batchSize: 20,
+  })
 
   if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
 
@@ -92,7 +98,7 @@ export default function CollectionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {entries.map(entry => {
+                  {entries.slice(0, visibleCount).map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
@@ -122,6 +128,11 @@ export default function CollectionsPage() {
                   })}
                 </tbody>
               </table>
+              {hasMore && (
+                <div ref={sentinelRef} className="py-2">
+                  <TableSkeleton rows={2} columns={6} />
+                </div>
+              )}
             </div>
           )}
         </Card>

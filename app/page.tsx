@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import DashboardLayout from './dashboard-layout'
 import { useCollections } from '../lib/hooks/useCollections'
 import { useParties } from '../lib/hooks/useParties'
+import { useInfiniteScroll } from '../lib/hooks/useInfiniteScroll'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatsCard } from '../components/ui/StatsCard'
 import { Spinner } from '../components/ui/Spinner'
 import { EmptyState } from '../components/ui/EmptyState'
+import { TableSkeleton } from '../components/ui/TableSkeleton'
 import { exportEntriesToExcel } from '../lib/cashCollectionService'
 
 const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
@@ -27,6 +29,7 @@ export default function DailyCashCollectionDashboard() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [totalToday, setTotalToday] = useState(0)
   const [adding, setAdding] = useState(false)
+  const searchRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (date) getTotalForDate(date).then(setTotalToday)
@@ -34,21 +37,28 @@ export default function DailyCashCollectionDashboard() {
 
   const today = new Date().toISOString().split('T')[0]
 
+  const todayEntries = useMemo(
+    () => entries.filter(e => e.date === today),
+    [entries, today]
+  )
+
   const filteredParties = useMemo(() => {
     if (!partySearch) return []
     const s = partySearch.toLowerCase()
-    return parties.filter(p => {
-      const hasPaymentToday = entries.some(e => e.account_no === p.account_no && e.date === today)
-      return !hasPaymentToday && (p.name.toLowerCase().includes(s) || p.account_no.includes(partySearch))
-    })
-  }, [parties, partySearch, entries, today])
+    return parties.filter(p =>
+      p.name.toLowerCase().includes(s) || p.account_no.includes(partySearch)
+    )
+  }, [parties, partySearch])
 
   const handlePartySelect = (party: typeof parties[0]) => {
     setAccountNo(party.account_no)
     setPartyName(party.name)
     setPartySearch(`${party.name} (${party.account_no})`)
     setShowDropdown(false)
+    setTimeout(() => amountRef.current?.focus(), 0)
   }
+
+  const amountRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,10 +72,14 @@ export default function DailyCashCollectionDashboard() {
     const result = await addEntry({ date, account_no: accountNo, amount: amt, collector })
     if (result) {
       setAmount('')
+      setAccountNo('')
+      setPartyName('')
+      setPartySearch('')
       if (date === today) {
         const t = await getTotalForDate(date)
         setTotalToday(t)
       }
+      setTimeout(() => searchRef.current?.focus(), 0)
     }
     setAdding(false)
   }
@@ -78,6 +92,12 @@ export default function DailyCashCollectionDashboard() {
     const filename = `Cash_Collections_${today}.xlsx`
     XLSX.writeFile(wb, filename)
   }
+
+  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
+    totalItems: todayEntries.length,
+    initialBatch: 20,
+    batchSize: 20,
+  })
 
   if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
 
@@ -127,6 +147,7 @@ export default function DailyCashCollectionDashboard() {
               <label htmlFor="party" className="block text-xs font-medium text-gray-600 mb-1.5">Search Party</label>
               <div className="relative">
                 <input
+                  ref={searchRef}
                   type="text" id="party" value={partySearch}
                   onChange={e => { setPartySearch(e.target.value); setShowDropdown(true) }}
                   onFocus={() => setShowDropdown(true)}
@@ -167,7 +188,7 @@ export default function DailyCashCollectionDashboard() {
               </div>
               <div>
                 <label htmlFor="amount" className="block text-xs font-medium text-gray-600 mb-1.5">Amount (Rs.)</label>
-                <input type="number" id="amount" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" min="0" className="input-field" placeholder="0.00" required />
+                <input ref={amountRef} type="number" id="amount" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" min="0" className="input-field" placeholder="0.00" required />
               </div>
             </div>
 
@@ -179,7 +200,7 @@ export default function DailyCashCollectionDashboard() {
                   </svg>
                   <div>
                     <p className="text-xs text-blue-600 font-medium">Total from {partyName}</p>
-                    <p className="text-lg font-bold text-blue-700">
+                    <p className="text-lg font-bold text-green-700">
                       Rs. {entries.filter(e => e.account_no === accountNo).reduce((s, e) => s + e.amount, 0).toFixed(2)}
                     </p>
                   </div>
@@ -202,7 +223,7 @@ export default function DailyCashCollectionDashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
               <h2 className="text-lg font-semibold text-gray-900">Today&apos;s Entries</h2>
-              <span className="badge badge-primary">{entries.filter(e => e.date === today).length}</span>
+              <span className="badge badge-primary">{todayEntries.length}</span>
             </div>
             <Button variant="secondary" size="sm" onClick={handleExport}>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,7 +233,7 @@ export default function DailyCashCollectionDashboard() {
             </Button>
           </div>
 
-          {entries.filter(e => e.date === today).length === 0 ? (
+          {todayEntries.length === 0 ? (
             <EmptyState title="No entries today" message="Start by adding a collection entry above." />
           ) : (
             <div className="overflow-x-auto -mx-4 md:-mx-0">
@@ -226,7 +247,7 @@ export default function DailyCashCollectionDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {entries.filter(e => e.date === today).map(entry => {
+                  {todayEntries.slice(0, visibleCount).map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
@@ -239,6 +260,11 @@ export default function DailyCashCollectionDashboard() {
                   })}
                 </tbody>
               </table>
+              {hasMore && (
+                <div ref={sentinelRef} className="py-2">
+                  <TableSkeleton rows={2} columns={4} />
+                </div>
+              )}
             </div>
           )}
         </Card>

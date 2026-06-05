@@ -5,11 +5,13 @@ import * as XLSX from 'xlsx'
 import DashboardLayout from '../dashboard-layout'
 import { supabase, type CashCollectionEntry, type Party, type Withdrawal } from '../../lib/supabaseClient'
 import { useToast } from '../../lib/hooks/useToast'
+import { useInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { StatsCard } from '../../components/ui/StatsCard'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { TableSkeleton } from '../../components/ui/TableSkeleton'
 import { exportForSelf, exportForBank } from '../../lib/cashCollectionService'
 
 export default function ReportsPage() {
@@ -17,11 +19,12 @@ export default function ReportsPage() {
   const [parties, setParties] = useState<Party[]>([])
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([])
   const [loading, setLoading] = useState(true)
-  const [filterDate, setFilterDate] = useState('')
+  const [filterFromDate, setFilterFromDate] = useState('')
+  const [filterToDate, setFilterToDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
   const { addToast } = useToast()
 
-  const loadData = useCallback(async () => {
+  const loadAllData = useCallback(async () => {
     try {
       setLoading(true)
       const [ed, pd, wd] = await Promise.all([
@@ -39,14 +42,15 @@ export default function ReportsPage() {
     }
   }, [addToast])
 
-  useEffect(() => { loadData() }, [loadData])
+  useEffect(() => { loadAllData() }, [loadAllData])
 
   const handleFilter = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
       setLoading(true)
       let eq = supabase.from('cash_collections').select('*').order('date', { ascending: false })
-      if (filterDate) eq = eq.eq('date', filterDate)
+      if (filterFromDate) eq = eq.gte('date', filterFromDate)
+      if (filterToDate) eq = eq.lte('date', filterToDate)
       if (filterAccount) eq = eq.eq('account_no', filterAccount)
       const { data } = await eq
       setEntries(data || [])
@@ -55,6 +59,13 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleClear = async () => {
+    setFilterFromDate('')
+    setFilterToDate('')
+    setFilterAccount('')
+    await loadAllData()
   }
 
   const totalCollection = useMemo(() => entries.reduce((s, e) => s + e.amount, 0), [entries])
@@ -70,7 +81,7 @@ export default function ReportsPage() {
   const exportSelf = async () => {
     const data = await exportForSelf(entries, parties, withdrawals)
     const ws = XLSX.utils.json_to_sheet(data)
-    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 25 }, { wch: 12 }, { wch: 12 }, { wch: 15 }, { wch: 12 }]
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 }]
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Personal Report')
     XLSX.writeFile(wb, 'For Self.xlsx')
@@ -78,42 +89,22 @@ export default function ReportsPage() {
   }
 
   const exportBank = async () => {
-    const exportData = await exportForBank(entries, parties, withdrawals)
-    const totalCredit = entries.reduce((s, e) => s + e.amount, 0)
-    const totalDebit = withdrawals.reduce((s, w) => s + w.amount, 0)
-    const uniqueAcc = new Set(entries.map(e => e.account_no)).size
-    const netBal = totalCredit - totalDebit
-
-    const row = () => ({ 'Transaction Date': '', 'Account Number': '', 'Particulars': '', 'Credit (Rs.)': '', 'Debit (Rs.)': '', 'Balance (Rs.)': '' })
-
-    const header = [
-      { ...row(), 'Transaction Date': 'CASH COLLECTION STATEMENT' },
-      { ...row(), 'Transaction Date': '' },
-      { ...row(), 'Transaction Date': `Generated: ${new Date().toLocaleDateString('en-GB')}` },
-      { ...row(), 'Transaction Date': '' },
-    ]
-
-    const footer = [
-      { ...row(), 'Particulars': 'TOTAL CREDIT', 'Credit (Rs.)': totalCredit.toFixed(2) },
-      { ...row(), 'Particulars': 'TOTAL DEBITS', 'Debit (Rs.)': totalDebit.toFixed(2) },
-      { ...row(), 'Particulars': 'NET BALANCE', 'Balance (Rs.)': netBal.toFixed(2) },
-      { ...row() },
-      { ...row(), 'Transaction Date': 'SUMMARY' },
-      { ...row(), 'Transaction Date': `Collections: ${entries.length}` },
-      { ...row(), 'Transaction Date': `Withdrawals: ${withdrawals.length}` },
-      { ...row(), 'Transaction Date': `Net Cash in Hand: Rs. ${netBal.toFixed(2)}` },
-      { ...row(), 'Transaction Date': `Unique Accounts: ${uniqueAcc}` },
-    ]
-
-    const ws = XLSX.utils.json_to_sheet([...header, ...exportData, ...footer], { skipHeader: false })
-    ws['!cols'] = [{ wch: 15 }, { wch: 12 }, { wch: 35 }, { wch: 15 }, { wch: 15 }, { wch: 15 }]
+    const data = await exportForBank(entries)
+    const ws = XLSX.utils.json_to_sheet(data)
+    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 10 }]
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Bank Statement')
+    XLSX.utils.book_append_sheet(wb, ws, 'Bank File')
     XLSX.writeFile(wb, 'For Bank.xlsx')
-    addToast('Bank report exported', 'success')
+    addToast('Bank file exported', 'success')
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
+
+  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
+    totalItems: entries.length,
+    initialBatch: 20,
+    batchSize: 20,
+  })
 
   if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
 
@@ -162,12 +153,24 @@ export default function ReportsPage() {
             </svg>
             <h2 className="text-lg font-semibold text-gray-900">Filters</h2>
           </div>
-          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <input type="date" value={filterDate} onChange={e => setFilterDate(e.target.value)} className="input-field" />
-            <input type="text" value={filterAccount} onChange={e => setFilterAccount(e.target.value)} maxLength={3} className="input-field" placeholder="Account no..." />
-            <div className="flex gap-2">
-              <Button type="submit" variant="primary" className="flex-1">Apply</Button>
-              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setFilterDate(''); setFilterAccount(''); loadData() }}>Clear</Button>
+          <form onSubmit={handleFilter} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">From Date</label>
+              <input type="date" value={filterFromDate} onChange={e => setFilterFromDate(e.target.value)} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">To Date</label>
+              <input type="date" value={filterToDate} onChange={e => setFilterToDate(e.target.value)} className="input-field" />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Account No</label>
+              <input type="text" value={filterAccount} onChange={e => setFilterAccount(e.target.value)} maxLength={3} className="input-field" placeholder="All accounts" />
+            </div>
+            <div className="flex items-end">
+              <Button type="submit" variant="primary" className="w-full">Apply</Button>
+            </div>
+            <div className="flex items-end">
+              <Button type="button" variant="secondary" className="w-full" onClick={handleClear}>Clear</Button>
             </div>
           </form>
         </Card>
@@ -224,7 +227,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {entries.map(entry => {
+                  {entries.slice(0, visibleCount).map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
@@ -238,6 +241,11 @@ export default function ReportsPage() {
                   })}
                 </tbody>
               </table>
+              {hasMore && (
+                <div ref={sentinelRef} className="py-2">
+                  <TableSkeleton rows={2} columns={5} />
+                </div>
+              )}
             </div>
           )}
         </Card>

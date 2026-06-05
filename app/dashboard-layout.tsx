@@ -10,11 +10,9 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [hydrated, setHydrated] = useState(false)
   const pathname = usePathname()
 
   useEffect(() => {
-    setHydrated(true)
     const check = () => {
       const mobile = window.innerWidth < 768
       if (mobile) setIsSidebarOpen(false)

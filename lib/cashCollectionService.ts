@@ -352,7 +352,25 @@ export async function getTotalWithdrawalsForDate(date: string) {
 }
 
 /**
+ * Pad a 3-digit account number with "50" prefix.
+ * Example: "004" -> "50004", "8" -> "50008"
+ */
+export function toPartyCode(accountNo: string | number): number {
+  const padded = String(accountNo).padStart(3, '0')
+  return Number(`50${padded}`)
+}
+
+/**
+ * Generate a serial number with "50" prefix.
+ * Example: 1 -> "50001", 100 -> "50100"
+ */
+export function toSerialNo(index: number): string {
+  return `50${String(index).padStart(3, '0')}`
+}
+
+/**
  * Export entries to Excel format - For Self (Personal Use)
+ * Format: Sr. No (50-prefixed) | Date | Party Name | Account No (50-prefixed) | Type | Amount | Collector
  */
 export async function exportForSelf(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
   const partyMap = new Map<string, string>()
@@ -365,10 +383,10 @@ export async function exportForSelf(entries: CashCollectionEntry[], parties: Par
   // Collections section
   entries.forEach((entry, index) => {
     exportData.push({
-      'Sr. No': String(index + 1),
+      'Sr. No': toSerialNo(index + 1),
       'Date': entry.date,
       'Party Name': partyMap.get(entry.account_no) || 'Unknown',
-      'Account No': entry.account_no,
+      'Account No': String(toPartyCode(entry.account_no)),
       'Type': 'Collection',
       'Amount (Rs.)': entry.amount.toFixed(2),
       'Collector': entry.collector
@@ -384,13 +402,13 @@ export async function exportForSelf(entries: CashCollectionEntry[], parties: Par
 
     withdrawals.forEach((w, index) => {
       exportData.push({
-      'Sr. No': String(index + 1),
+        'Sr. No': toSerialNo(index + 1),
         'Date': w.date,
-        'Party Name': '',
-        'Account No': w.category,
+        'Party Name': partyMap.get(w.account_no) || 'Unknown',
+        'Account No': String(toPartyCode(w.account_no)),
         'Type': 'Payment',
         'Amount (Rs.)': `(${w.amount.toFixed(2)})`,
-        'Collector': w.description
+        'Collector': ''
       })
     })
 
@@ -399,7 +417,6 @@ export async function exportForSelf(entries: CashCollectionEntry[], parties: Par
     exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'NET TOTAL', 'Type': 'TOTAL WITHDRAWALS', 'Amount (Rs.)': `(${totalWithdrawal.toFixed(2)})`, 'Collector': '' })
     exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'NET TOTAL', 'Type': 'NET CASH IN HAND', 'Amount (Rs.)': (totalCollection - totalWithdrawal).toFixed(2), 'Collector': '' })
   } else {
-    // No withdrawals - append grand total
     const total = entries.reduce((sum, entry) => sum + entry.amount, 0)
     exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': '', 'Type': '', 'Amount (Rs.)': '', 'Collector': '' })
     exportData.push({ 'Sr. No': '', 'Date': '', 'Party Name': '', 'Account No': 'GRAND TOTAL', 'Type': '', 'Amount (Rs.)': total.toFixed(2), 'Collector': '' })
@@ -409,67 +426,28 @@ export async function exportForSelf(entries: CashCollectionEntry[], parties: Par
 }
 
 /**
- * Export entries to Excel format - For Bank (Professional Format)
+ * Export entries to Excel format - For Bank (Cooperative Bank File Format)
+ * Columns: SRNO_NUMBER | ACTYP | AGENTCODE | PARTYCODE | AMOUNT | TRTP | CHEQUENO | STATUS
+ * - ACTYP = "SD" (fixed)
+ * - AGENTCODE = 5 (fixed)
+ * - PARTYCODE = "50" + 3-digit account_no (e.g. "50004")
+ * - TRTP, CHEQUENO, STATUS = blank
  */
-export async function exportForBank(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
-  const partyMap = new Map<string, string>()
-  parties.forEach(party => {
-    partyMap.set(party.account_no, party.name)
-  })
-
-  // Combine and sort all transactions by date
-  const allTransactions: { date: string; type: string; accountNo: string; particulars: string; credit: number; debit: number }[] = []
-
+export async function exportForBank(entries: CashCollectionEntry[]) {
   const sortedEntries = [...entries].sort((a, b) =>
     new Date(a.date).getTime() - new Date(b.date).getTime()
   )
 
-  sortedEntries.forEach(entry => {
-    const partyName = partyMap.get(entry.account_no) || 'Unknown'
-    const shortName = partyName.split(' ').slice(0, 2).join(' ')
-    allTransactions.push({
-      date: entry.date,
-      type: 'Collection',
-      accountNo: entry.account_no,
-      particulars: `Cash Collection - ${shortName}`,
-      credit: entry.amount,
-      debit: 0
-    })
-  })
-
-  if (withdrawals && withdrawals.length > 0) {
-    const sortedWithdrawals = [...withdrawals].sort((a, b) =>
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    )
-    sortedWithdrawals.forEach(w => {
-      allTransactions.push({
-        date: w.date,
-        type: 'Withdrawal',
-        accountNo: w.category,
-        particulars: `Payment - ${w.description}`,
-        credit: 0,
-        debit: w.amount
-      })
-    })
-  }
-
-  // Sort all transactions by date
-  allTransactions.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-
-  let runningBalance = 0
-  const exportData = allTransactions.map(t => {
-    runningBalance += t.credit - t.debit
-    return {
-      'Transaction Date': t.date,
-      'Account Number': t.accountNo,
-      'Particulars': t.particulars,
-      'Credit (Rs.)': t.credit > 0 ? t.credit.toFixed(2) : '',
-      'Debit (Rs.)': t.debit > 0 ? t.debit.toFixed(2) : '',
-      'Balance (Rs.)': runningBalance.toFixed(2)
-    }
-  })
-
-  return exportData
+  return sortedEntries.map((entry, index) => ({
+    'SRNO_NUMBER': index + 1,
+    'ACTYP': 'SD',
+    'AGENTCODE': 5,
+    'PARTYCODE': toPartyCode(entry.account_no),
+    'AMOUNT': Number(entry.amount.toFixed(2)),
+    'TRTP': '',
+    'CHEQUENO': '',
+    'STATUS': '',
+  }))
 }
 
 /**

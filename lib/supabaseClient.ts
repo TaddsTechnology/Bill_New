@@ -12,9 +12,8 @@ export type CashCollectionEntry = {
 export type Withdrawal = {
   id?: number
   date: string
+  account_no: string
   amount: number
-  description: string
-  category: string
   created_at?: string
 }
 
@@ -35,8 +34,15 @@ export function getSupabase(): SupabaseClient {
 
   if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'your_actual_supabase_project_url_here' || supabaseAnonKey === 'your_actual_supabase_anon_key_here') {
     console.warn('Supabase env vars missing — using mock client (data will be empty)')
-    const query = new Proxy({} as any, { get: () => () => query })
-    client = { from: () => query, rpc: () => query, channel: () => ({ on: () => ({ subscribe: () => {} }) }), removeChannel: () => {} } as unknown as SupabaseClient
+    const query: Record<string, unknown> = {}
+    const handler: ProxyHandler<typeof query> = { get: () => () => new Proxy(query, handler) }
+    const mockQuery = new Proxy(query, handler)
+    client = {
+      from: () => mockQuery,
+      rpc: () => mockQuery,
+      channel: () => ({ on: () => ({ subscribe: () => undefined }) }),
+      removeChannel: () => undefined,
+    } as unknown as SupabaseClient
     return client
   }
 

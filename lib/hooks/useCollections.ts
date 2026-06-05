@@ -73,6 +73,7 @@ export function useCollections() {
     if (accountNo) query = query.eq('account_no', accountNo)
     const { data, error } = await query
     if (error) { addToast('Failed to filter', 'error'); return [] }
+    setEntries(data || [])
     return data || []
   }, [addToast])
 

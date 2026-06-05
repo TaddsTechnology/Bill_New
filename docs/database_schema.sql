@@ -30,14 +30,33 @@ CREATE INDEX idx_parties_account_no ON parties(account_no);
 CREATE TABLE withdrawals (
   id SERIAL PRIMARY KEY,
   date DATE NOT NULL,
+  account_no VARCHAR(3) NOT NULL,
   amount DECIMAL(10, 2) NOT NULL,
-  description VARCHAR(500) NOT NULL,
-  category VARCHAR(100) NOT NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
 CREATE INDEX idx_withdrawals_date ON withdrawals(date);
-CREATE INDEX idx_withdrawals_category ON withdrawals(category);
+CREATE INDEX idx_withdrawals_account_no ON withdrawals(account_no);
+
+-- ==========================================================
+-- MIGRATION: Update existing withdrawals table
+-- ==========================================================
+-- Run this if you already have a withdrawals table with
+-- the old category/description columns:
+--
+-- ALTER TABLE withdrawals ADD COLUMN IF NOT EXISTS account_no VARCHAR(3);
+-- ALTER TABLE withdrawals ALTER COLUMN amount TYPE DECIMAL(12, 2) USING amount::DECIMAL(12, 2);
+-- ALTER TABLE withdrawals ALTER COLUMN account_no SET NOT NULL;
+-- ALTER TABLE withdrawals DROP COLUMN IF EXISTS category;
+-- ALTER TABLE withdrawals DROP COLUMN IF EXISTS description;
+-- DROP INDEX IF EXISTS idx_withdrawals_category;
+-- CREATE INDEX IF NOT EXISTS idx_withdrawals_account_no ON withdrawals(account_no);
+--
+-- ==========================================================
+-- MIGRATION: Fix amount rounding (500 → 499.99)
+-- ==========================================================
+-- ALTER TABLE cash_collections ALTER COLUMN amount TYPE DECIMAL(12, 2) USING amount::DECIMAL(12, 2);
+-- ALTER TABLE withdrawals ALTER COLUMN amount TYPE DECIMAL(12, 2) USING amount::DECIMAL(12, 2);
 
 -- ==========================================================
 -- ROW LEVEL SECURITY (RLS)
