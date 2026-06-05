@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import * as XLSX from 'xlsx'
 import DashboardLayout from './dashboard-layout'
 import { useCollections } from '../lib/hooks/useCollections'
 import { useParties } from '../lib/hooks/useParties'
@@ -12,7 +11,7 @@ import { StatsCard } from '../components/ui/StatsCard'
 import { Spinner } from '../components/ui/Spinner'
 import { EmptyState } from '../components/ui/EmptyState'
 import { TableSkeleton } from '../components/ui/TableSkeleton'
-import { exportEntriesToExcel } from '../lib/cashCollectionService'
+import { exportForSelf, writeWorkbookToFile } from '../lib/cashCollectionService'
 
 const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
 
@@ -85,12 +84,9 @@ export default function DailyCashCollectionDashboard() {
   }
 
   const handleExport = async () => {
-    const data = await exportEntriesToExcel(entries, parties)
-    const ws = XLSX.utils.json_to_sheet(data)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Cash Collections')
-    const filename = `Cash_Collections_${today}.xlsx`
-    XLSX.writeFile(wb, filename)
+    const wb = await exportForSelf(entries, parties, undefined, { fromDate: today, toDate: today })
+    const filename = `DSS_${today}.xlsx`
+    writeWorkbookToFile(wb, filename)
   }
 
   const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({

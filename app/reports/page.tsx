@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import * as XLSX from 'xlsx'
 import DashboardLayout from '../dashboard-layout'
 import { supabase, type CashCollectionEntry, type Party, type Withdrawal } from '../../lib/supabaseClient'
 import { useToast } from '../../lib/hooks/useToast'
@@ -12,7 +11,7 @@ import { StatsCard } from '../../components/ui/StatsCard'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { TableSkeleton } from '../../components/ui/TableSkeleton'
-import { exportForSelf, exportForBank } from '../../lib/cashCollectionService'
+import { exportForSelf, exportForBank, writeWorkbookToFile } from '../../lib/cashCollectionService'
 
 export default function ReportsPage() {
   const [entries, setEntries] = useState<CashCollectionEntry[]>([])
@@ -79,23 +78,29 @@ export default function ReportsPage() {
   }, [entries, parties])
 
   const exportSelf = async () => {
-    const data = await exportForSelf(entries, parties, withdrawals)
-    const ws = XLSX.utils.json_to_sheet(data)
-    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 12 }, { wch: 15 }, { wch: 12 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Personal Report')
-    XLSX.writeFile(wb, 'For Self.xlsx')
-    addToast('Personal report exported', 'success')
+    try {
+      const wb = await exportForSelf(entries, parties, withdrawals, {
+        fromDate: filterFromDate || undefined,
+        toDate: filterToDate || undefined,
+      })
+      writeWorkbookToFile(wb, 'For Self.xlsx')
+      addToast('Personal report exported', 'success')
+    } catch {
+      addToast('Failed to export personal report', 'error')
+    }
   }
 
   const exportBank = async () => {
-    const data = await exportForBank(entries)
-    const ws = XLSX.utils.json_to_sheet(data)
-    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 10 }]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Bank File')
-    XLSX.writeFile(wb, 'For Bank.xlsx')
-    addToast('Bank file exported', 'success')
+    try {
+      const ws = await exportForBank(entries)
+      const XLSX = await import('xlsx-js-style')
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, 'Bank File')
+      XLSX.writeFile(wb, 'For Bank.xlsx')
+      addToast('Bank file exported', 'success')
+    } catch {
+      addToast('Failed to export bank file', 'error')
+    }
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
