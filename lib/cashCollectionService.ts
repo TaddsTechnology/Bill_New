@@ -404,6 +404,218 @@ export async function exportForBank(entries: CashCollectionEntry[]) {
 }
 
 /**
+ * Build a single-party ledger worksheet for a month.
+ * Columns: DATE | TYPE | AMOUNT | BALANCE
+ * Collections (green), Withdrawals (red), running balance.
+ */
+function buildPartyWorksheet(
+  party: Party,
+  monthEntries: CashCollectionEntry[],
+  monthWithdrawals: Withdrawal[],
+  monthKey: string,
+  openingBalance: number
+): XLSX.WorkSheet {
+  // Merge collections + withdrawals, sort by date
+  type Row = { date: string; type: 'COLLECTION' | 'WITHDRAWAL'; amount: number; collector?: string }
+  const rows: Row[] = []
+  monthEntries.forEach(e => rows.push({ date: e.date, type: 'COLLECTION', amount: e.amount, collector: e.collector }))
+  monthWithdrawals.forEach(w => rows.push({ date: w.date, type: 'WITHDRAWAL', amount: w.amount }))
+  rows.sort((a, b) => a.date.localeCompare(b.date))
+
+  const aoa: (string | number)[][] = []
+
+  // Title rows
+  aoa.push(['', 'PROGRESSIVE MERC. CO-OP BANK, '])
+  aoa.push(['KALUPUR', ''])
+  aoa.push(['', 'DAILY SAVINGS SCHEME'])
+  const displayName = `${party.name} - ${toPartyCode(party.account_no)}`
+  aoa.push(['', displayName])
+  aoa.push(['', ` ${monthKey}     `])
+
+  // Column headers
+  aoa.push(['DATE', 'PARTICULARS', 'AMOUNT (Rs.)', 'BALANCE (Rs.)'])
+
+  let balance = openingBalance
+  if (openingBalance !== 0) {
+    aoa.push(['', 'OPENING BALANCE', '', Number(openingBalance.toFixed(2))])
+  }
+
+  rows.forEach(r => {
+    const sign = r.type === 'COLLECTION' ? r.amount : -r.amount
+    balance += sign
+    const displayAmount = r.type === 'WITHDRAWAL' ? -r.amount : r.amount
+    const particulars = r.type === 'COLLECTION' ? 'BY CASH (COLLECTION)' : 'BY WITHDRAWAL'
+    aoa.push([r.date, particulars, Number(displayAmount.toFixed(2)), Number(balance.toFixed(2))])
+  })
+
+  // Closing total
+  const monthCollection = monthEntries.reduce((s, e) => s + e.amount, 0)
+  const monthWithdrawal = monthWithdrawals.reduce((s, w) => s + w.amount, 0)
+  const netForMonth = monthCollection - monthWithdrawal
+  aoa.push(['', `MONTHLY NET (${monthCollection.toFixed(2)} - ${monthWithdrawal.toFixed(2)})`, Number(netForMonth.toFixed(2)), Number(balance.toFixed(2))])
+  aoa.push(['', 'CLOSING BALANCE', '', Number(balance.toFixed(2))])
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+  // Column widths
+  ws['!cols'] = [
+    { wch: 14 },  // DATE
+    { wch: 30 },  // PARTICULARS
+    { wch: 16 },  // AMOUNT
+    { wch: 16 },  // BALANCE
+  ]
+
+  // Apply styles
+  setCellStyle(ws, 'B1', STYLES.bankName)
+  setCellStyle(ws, 'A2', STYLES.branch)
+  setCellStyle(ws, 'B3', STYLES.scheme)
+  setCellStyle(ws, 'B4', STYLES.monthYear)
+  setCellStyle(ws, 'B5', STYLES.monthYear)
+
+  // Header row
+  for (let c = 0; c < 4; c++) {
+    const ref = XLSX.utils.encode_cell({ r: 5, c })
+    setCellStyle(ws, ref, STYLES.colHeader)
+  }
+
+  // Data rows
+  const dataStartRow = openingBalance !== 0 ? 7 : 6
+  const lastDataRow = aoa.length - 1
+  for (let r = dataStartRow; r <= lastDataRow; r++) {
+    const isEven = (r - dataStartRow) % 2 === 1
+    const isClosing = r === lastDataRow || r === lastDataRow - 1
+    for (let c = 0; c < 4; c++) {
+      const ref = XLSX.utils.encode_cell({ r, c })
+      let style: CellStyle
+      if (c === 0) {
+        style = { ...STYLES.accountNo, ...(isEven ? STYLES.rowEven : {}) }
+      } else if (c === 1) {
+        style = { ...STYLES.name, ...(isEven ? STYLES.rowEven : {}) }
+      } else {
+        // AMOUNT or BALANCE column
+        const amountVal = aoa[r][2] as number
+        const isWithdrawal = typeof amountVal === 'number' && amountVal < 0
+        if (isClosing) {
+          style = STYLES.total
+        } else if (c === 3) {
+          // Balance always shown
+          style = { ...STYLES.amount, ...(isEven ? STYLES.rowEven : {}) }
+        } else {
+          style = isWithdrawal
+            ? { ...STYLES.amount, ...(isEven ? STYLES.rowEven : {}), font: { sz: 10, color: { rgb: 'C00000' }, bold: true } }
+            : { ...STYLES.amount, ...(isEven ? STYLES.rowEven : {}) }
+        }
+      }
+      setCellStyle(ws, ref, style)
+    }
+  }
+
+  // Merge title cells
+  ws['!merges'] = [
+    { s: { r: 0, c: 1 }, e: { r: 0, c: 3 } },
+    { s: { r: 1, c: 0 }, e: { r: 1, c: 3 } },
+    { s: { r: 2, c: 1 }, e: { r: 2, c: 3 } },
+    { s: { r: 3, c: 1 }, e: { r: 3, c: 3 } },
+    { s: { r: 4, c: 1 }, e: { r: 4, c: 3 } },
+  ]
+
+  // Row heights
+  ws['!rows'] = [
+    { hpt: 24 },
+    { hpt: 18 },
+    { hpt: 18 },
+    { hpt: 18 },
+    { hpt: 18 },
+    { hpt: 22 },
+  ]
+
+  return ws
+}
+
+
+
+/**
+ * Export a single party's transactions as a multi-sheet Excel workbook.
+ * One sheet per month, covering collections and withdrawals.
+ * Optionally filtered by date range.
+ */
+export async function exportForParty(
+  party: Party,
+  entries: CashCollectionEntry[],
+  withdrawals: Withdrawal[],
+  options?: { fromDate?: string; toDate?: string }
+): Promise<XLSX.WorkBook> {
+  const partyEntries = entries.filter(e => e.account_no === party.account_no)
+  const partyWithdrawals = withdrawals.filter(w => w.account_no === party.account_no)
+
+  // Group by month
+  const monthBuckets = new Map<string, { entries: CashCollectionEntry[]; withdrawals: Withdrawal[]; fromDate: string; toDate: string }>()
+  const ensureBucket = (date: string) => {
+    const key = formatMonthYear(date)
+    if (!monthBuckets.has(key)) {
+      monthBuckets.set(key, { entries: [], withdrawals: [], fromDate: date, toDate: date })
+    }
+    return monthBuckets.get(key)!
+  }
+  partyEntries.forEach(e => {
+    if (options?.fromDate && e.date < options.fromDate) return
+    if (options?.toDate && e.date > options.toDate) return
+    const b = ensureBucket(e.date)
+    b.entries.push(e)
+    if (e.date < b.fromDate) b.fromDate = e.date
+    if (e.date > b.toDate) b.toDate = e.date
+  })
+  partyWithdrawals.forEach(w => {
+    if (options?.fromDate && w.date < options.fromDate) return
+    if (options?.toDate && w.date > options.toDate) return
+    const b = ensureBucket(w.date)
+    b.withdrawals.push(w)
+    if (w.date < b.fromDate) b.fromDate = w.date
+    if (w.date > b.toDate) b.toDate = w.date
+  })
+
+  const wb = XLSX.utils.book_new()
+  const sortedKeys = Array.from(monthBuckets.keys()).sort()
+
+  if (sortedKeys.length === 0) {
+    // Empty workbook with one informational sheet
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['', 'PROGRESSIVE MERC. CO-OP BANK, '],
+      ['KALUPUR', ''],
+      ['', 'DAILY SAVINGS SCHEME'],
+      ['', `${party.name} - ${toPartyCode(party.account_no)}`],
+      [''],
+      ['No transactions found for the selected period.'],
+    ])
+    setCellStyle(ws, 'B1', STYLES.bankName)
+    setCellStyle(ws, 'A2', STYLES.branch)
+    setCellStyle(ws, 'B3', STYLES.scheme)
+    setCellStyle(ws, 'B4', STYLES.monthYear)
+    setCellStyle(ws, 'A6', { font: { italic: true, color: { rgb: '888888' } } } as CellStyle)
+    XLSX.utils.book_append_sheet(wb, ws, 'No Data')
+    return wb
+  }
+
+  sortedKeys.forEach(key => {
+    const bucket = monthBuckets.get(key)!
+    // Compute opening balance: net of all transactions before this month
+    const opening = partyEntries
+      .filter(e => e.date < bucket.fromDate)
+      .reduce((s, e) => s + e.amount, 0) -
+      partyWithdrawals
+        .filter(w => w.date < bucket.fromDate)
+        .reduce((s, w) => s + w.amount, 0)
+
+    const ws = buildPartyWorksheet(party, bucket.entries, bucket.withdrawals, key, opening)
+    // Sheet name: 31 chars max, no special chars
+    const sheetName = key.replace(/[^A-Za-z0-9]/g, '').slice(0, 31) || 'Report'
+    XLSX.utils.book_append_sheet(wb, ws, sheetName)
+  })
+
+  return wb
+}
+
+/**
  * Get entries with optional filters
  */
 export async function getFilteredEntries(date?: string | null, accountNo?: string | null) {

@@ -12,6 +12,7 @@ import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { TableSkeleton } from '../../components/ui/TableSkeleton'
+import { PartyReportModal } from '../../components/PartyReportModal'
 
 export default function MasterDataPage() {
   const { parties, loading, addParty, updateParty, deleteParty } = useParties()
@@ -22,6 +23,7 @@ export default function MasterDataPage() {
   const [accountNo, setAccountNo] = useState('')
   const [editP, setEditP] = useState<{ id: number; name: string; accountNo: string } | null>(null)
   const [search, setSearch] = useState('')
+  const [reportOpen, setReportOpen] = useState(false)
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -80,9 +82,22 @@ export default function MasterDataPage() {
   return (
     <DashboardLayout>
       <div className="w-full space-y-5 animate-fade-in">
-        <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Master Data</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage parties and account information</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Master Data</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage parties and account information</p>
+          </div>
+          <Button
+            onClick={() => setReportOpen(true)}
+            disabled={parties.length === 0}
+            size="lg"
+            className="w-full sm:w-auto shrink-0"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2a2 2 0 012-2h2a2 2 0 012 2v2m2-10V5a2 2 0 00-2-2h-2a2 2 0 00-2 2v2M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span className="sm:inline">Generate Party Report</span>
+          </Button>
         </div>
 
         <Card padding="md">
@@ -247,6 +262,14 @@ export default function MasterDataPage() {
           </form>
         )}
       </Modal>
+
+      <PartyReportModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        parties={parties}
+        entries={entries}
+        withdrawals={withdrawals}
+      />
     </DashboardLayout>
   )
 }
