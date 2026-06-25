@@ -12,6 +12,8 @@ import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { TableSkeleton } from '../../components/ui/TableSkeleton'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import { useToast } from '../../lib/hooks/useToast'
 
 export default function WithdrawalsPage() {
   const { withdrawals, loading, addWithdrawal, updateWithdrawal, deleteWithdrawal, getFiltered, getTotalForDate, reload } = useWithdrawals()
@@ -24,7 +26,9 @@ export default function WithdrawalsPage() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [filterDate, setFilterDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
+  const { addToast } = useToast()
   const [editW, setEditW] = useState<{ id: number; date: string; amount: string; accountNo: string } | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
   const [totalToday, setTotalToday] = useState(0)
   const searchRef = useRef<HTMLInputElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
@@ -228,7 +232,7 @@ export default function WithdrawalsPage() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                               </svg>
                             </button>
-                            <button onClick={() => { if (confirm('Delete this withdrawal?')) deleteWithdrawal(w.id!) }}
+                            <button onClick={() => setConfirmDelete(w.id!)}
                               className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -282,6 +286,19 @@ export default function WithdrawalsPage() {
           </form>
         )}
       </Modal>
+
+      <ConfirmModal
+        open={confirmDelete !== null}
+        title="Delete Withdrawal"
+        message="Are you sure you want to delete this withdrawal? This action cannot be undone."
+        onConfirm={async () => {
+          if (confirmDelete === null) return
+          await deleteWithdrawal(confirmDelete)
+          addToast('Withdrawal deleted', 'success')
+          setConfirmDelete(null)
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
     </DashboardLayout>
   )
 }

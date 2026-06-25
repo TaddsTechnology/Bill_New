@@ -12,7 +12,9 @@ import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { Modal } from '../../components/ui/Modal'
 import { TableSkeleton } from '../../components/ui/TableSkeleton'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { PartyReportModal } from '../../components/PartyReportModal'
+import { useToast } from '../../lib/hooks/useToast'
 
 export default function MasterDataPage() {
   const { parties, loading, addParty, updateParty, deleteParty } = useParties()
@@ -22,8 +24,10 @@ export default function MasterDataPage() {
   const [name, setName] = useState('')
   const [accountNo, setAccountNo] = useState('')
   const [editP, setEditP] = useState<{ id: number; name: string; accountNo: string } | null>(null)
+  const { addToast } = useToast()
   const [search, setSearch] = useState('')
   const [reportOpen, setReportOpen] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -222,8 +226,8 @@ export default function MasterDataPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                             </svg>
                           </button>
-                          <button onClick={() => { if (confirm('Delete this party?')) deleteParty(p.id!) }}
-                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
+                           <button onClick={() => setConfirmDelete(p.id!)}
+                              className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors" title="Delete">
                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
@@ -262,6 +266,19 @@ export default function MasterDataPage() {
           </form>
         )}
       </Modal>
+
+      <ConfirmModal
+        open={confirmDelete !== null}
+        title="Delete Party"
+        message="Are you sure you want to delete this party? All associated data will remain."
+        onConfirm={async () => {
+          if (confirmDelete === null) return
+          await deleteParty(confirmDelete)
+          addToast('Party deleted', 'success')
+          setConfirmDelete(null)
+        }}
+        onCancel={() => setConfirmDelete(null)}
+      />
 
       <PartyReportModal
         open={reportOpen}
