@@ -175,7 +175,7 @@ export default function MasterDataPage() {
                 </tbody>
               </table>
               {hasMore && (
-                <div ref={sentinelRef} className="py-2">
+                <div className="py-2">
                   <TableSkeleton rows={2} columns={5} />
                 </div>
               )}

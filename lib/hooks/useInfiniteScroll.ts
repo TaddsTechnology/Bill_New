@@ -16,7 +16,6 @@ export function useInfiniteScroll({
   rootMargin = '200px',
 }: UseInfiniteScrollOptions) {
   const [visibleCount, setVisibleCount] = useState(Math.min(initialBatch, totalItems))
-  const [isLoading, setIsLoading] = useState(false)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -24,12 +23,10 @@ export function useInfiniteScroll({
   }, [totalItems, initialBatch])
 
   const loadMore = useCallback(() => {
-    if (isLoading || visibleCount >= totalItems) return
-    setIsLoading(true)
+    if (visibleCount >= totalItems) return
     const next = Math.min(visibleCount + batchSize, totalItems)
     setVisibleCount(next)
-    requestAnimationFrame(() => setIsLoading(false))
-  }, [isLoading, visibleCount, totalItems, batchSize])
+  }, [visibleCount, totalItems, batchSize])
 
   useEffect(() => {
     const node = sentinelRef.current
@@ -44,7 +41,7 @@ export function useInfiniteScroll({
 
   const hasMore = visibleCount < totalItems
 
-  return { visibleCount, sentinelRef, isLoading, hasMore }
+  return { visibleCount, sentinelRef, isLoading: false, hasMore }
 }
 
 type FetchResult<T> = {
@@ -70,8 +67,9 @@ export function useServerInfiniteScroll<T>(
   const { initialBatch = 20, batchSize = 20, rootMargin = '200px' } = options
   const [items, setItems] = useState<T[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [hasMore, setHasMore] = useState(true)
+  const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState<number | null>(null)
+  const [loadCount, setLoadCount] = useState(0)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
   const loadingRef = useRef(false)
   const offsetRef = useRef(0)
@@ -99,12 +97,14 @@ export function useServerInfiniteScroll<T>(
     } finally {
       setIsLoading(false)
       loadingRef.current = false
+      setLoadCount(c => c + 1)
     }
   }, [fetcher])
 
   useEffect(() => {
     setItems([])
-    setHasMore(true)
+    setHasMore(false)
+    setLoadCount(0)
     offsetRef.current = 0
     load(0, initialBatch, false)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,7 +115,7 @@ export function useServerInfiniteScroll<T>(
     if (!node || !hasMore || loadingRef.current) return
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !loadingRef.current && hasMore) {
+        if (entry.isIntersecting && !loadingRef.current) {
           load(offsetRef.current, batchSize, true)
         }
       },
@@ -123,11 +123,12 @@ export function useServerInfiniteScroll<T>(
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [hasMore, load, batchSize, rootMargin])
+  }, [hasMore, load, batchSize, rootMargin, loadCount])
 
   const reload = useCallback(() => {
     setItems([])
-    setHasMore(true)
+    setHasMore(false)
+    setLoadCount(0)
     offsetRef.current = 0
     load(0, initialBatch, false)
   }, [load, initialBatch])
