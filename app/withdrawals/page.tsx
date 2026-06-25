@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useWithdrawals } from '../../lib/hooks/useWithdrawals'
 import { useParties } from '../../lib/hooks/useParties'
-import { useInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
+import { useServerInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
+import { supabase } from '../../lib/supabaseClient'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { StatsCard } from '../../components/ui/StatsCard'
@@ -16,7 +17,7 @@ import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { useToast } from '../../lib/hooks/useToast'
 
 export default function WithdrawalsPage() {
-  const { withdrawals, loading, addWithdrawal, updateWithdrawal, deleteWithdrawal, getFiltered, getTotalForDate, reload } = useWithdrawals()
+  const { addWithdrawal, updateWithdrawal, deleteWithdrawal, getTotalForDate } = useWithdrawals()
   const { parties } = useParties()
 
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
@@ -35,7 +36,7 @@ export default function WithdrawalsPage() {
 
   useEffect(() => {
     if (date) getTotalForDate(date).then(setTotalToday)
-  }, [date, withdrawals, getTotalForDate])
+  }, [date, getTotalForDate])
 
   const filteredParties = useMemo(() => {
     if (!accountSearch) return []
@@ -76,22 +77,33 @@ export default function WithdrawalsPage() {
       amount: parseFloat(editW.amount),
     })
     setEditW(null)
+    reload()
   }
 
-  const handleFilter = async (e: React.FormEvent) => {
+  const handleFilter = (e: React.FormEvent) => {
     e.preventDefault()
-    await getFiltered(filterDate || null, filterAccount || null)
+    reload()
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
 
-  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
-    totalItems: withdrawals.length,
-    initialBatch: 20,
-    batchSize: 20,
-  })
+  const fetcher = useCallback(async (offset: number, limit: number) => {
+    let query = supabase.from('withdrawals').select('*', { count: 'exact' })
+      .order('date', { ascending: false }).order('id', { ascending: false })
+    if (filterDate) query = query.eq('date', filterDate)
+    if (filterAccount) query = query.eq('account_no', filterAccount)
+    const { data, error, count } = await query.range(offset, offset + limit - 1)
+    if (error) return { data: [], total: 0 }
+    return { data: data || [], total: count }
+  }, [filterDate, filterAccount])
 
-  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
+  const { items: withdrawals, isLoading, hasMore, totalCount, sentinelRef, reload } = useServerInfiniteScroll(
+    fetcher,
+    [filterDate, filterAccount],
+    { initialBatch: 20, batchSize: 20 }
+  )
+
+  if (isLoading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
@@ -198,7 +210,7 @@ export default function WithdrawalsPage() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <h2 className="text-lg font-semibold text-gray-900">All Withdrawals</h2>
-            <span className="badge badge-error">{withdrawals.length} total</span>
+            <span className="badge badge-error">{totalCount ?? withdrawals.length} total</span>
           </div>
 
           {withdrawals.length === 0 ? (
@@ -216,7 +228,7 @@ export default function WithdrawalsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {withdrawals.slice(0, visibleCount).map(w => {
+                  {withdrawals.map(w => {
                     const party = parties.find(p => p.account_no === w.account_no)
                     return (
                       <tr key={w.id} className="hover:bg-gray-50/50 transition-colors">
@@ -296,6 +308,7 @@ export default function WithdrawalsPage() {
           await deleteWithdrawal(confirmDelete)
           addToast('Withdrawal deleted', 'success')
           setConfirmDelete(null)
+          reload()
         }}
         onCancel={() => setConfirmDelete(null)}
       />

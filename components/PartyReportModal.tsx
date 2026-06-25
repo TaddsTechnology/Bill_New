@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Modal } from './ui/Modal'
 import { Button } from './ui/Button'
 import { TableSkeleton } from './ui/TableSkeleton'
+import { supabase } from '../lib/supabaseClient'
 import { exportForParty, writeWorkbookToFile } from '../lib/cashCollectionService'
 import type { Party, CashCollectionEntry, Withdrawal } from '../lib/supabaseClient'
 
@@ -11,17 +12,46 @@ type Props = {
   open: boolean
   onClose: () => void
   parties: Party[]
-  entries: CashCollectionEntry[]
-  withdrawals: Withdrawal[]
 }
 
-export function PartyReportModal({ open, onClose, parties, entries, withdrawals }: Props) {
+export function PartyReportModal({ open, onClose, parties }: Props) {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Party | null>(null)
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [loading, setLoading] = useState(false)
+  const [allEntries, setAllEntries] = useState<CashCollectionEntry[]>([])
+  const [allWithdrawals, setAllWithdrawals] = useState<Withdrawal[]>([])
+  const [dataLoading, setDataLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  const loadData = useCallback(async () => {
+    if (!selected) return
+    setDataLoading(true)
+    try {
+      const [ed, wd] = await Promise.all([
+        supabase
+          .from('cash_collections')
+          .select('*')
+          .eq('account_no', selected.account_no)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false }),
+        supabase
+          .from('withdrawals')
+          .select('*')
+          .eq('account_no', selected.account_no)
+          .order('date', { ascending: false })
+          .order('id', { ascending: false }),
+      ])
+      setAllEntries(ed.data || [])
+      setAllWithdrawals(wd.data || [])
+    } catch {
+      setAllEntries([])
+      setAllWithdrawals([])
+    } finally {
+      setDataLoading(false)
+    }
+  }, [selected])
 
   useEffect(() => {
     if (open) {
@@ -29,9 +59,15 @@ export function PartyReportModal({ open, onClose, parties, entries, withdrawals 
       setSelected(null)
       setFromDate('')
       setToDate('')
+      setAllEntries([])
+      setAllWithdrawals([])
       setTimeout(() => searchRef.current?.focus(), 50)
     }
   }, [open])
+
+  useEffect(() => {
+    if (selected) loadData()
+  }, [selected, loadData])
 
   const filteredParties = useMemo(() => {
     if (!search) return parties
@@ -43,8 +79,8 @@ export function PartyReportModal({ open, onClose, parties, entries, withdrawals 
 
   const partyStats = useMemo(() => {
     if (!selected) return null
-    const partyEntries = entries.filter(e => e.account_no === selected.account_no)
-    const partyWithdrawals = withdrawals.filter(w => w.account_no === selected.account_no)
+    const partyEntries = allEntries
+    const partyWithdrawals = allWithdrawals
     const totalCollection = partyEntries.reduce((s, e) => s + e.amount, 0)
     const totalWithdrawal = partyWithdrawals.reduce((s, w) => s + w.amount, 0)
     const firstDate = partyEntries.length > 0
@@ -62,13 +98,13 @@ export function PartyReportModal({ open, onClose, parties, entries, withdrawals 
       firstDate,
       lastDate,
     }
-  }, [selected, entries, withdrawals])
+  }, [selected, allEntries, allWithdrawals])
 
   const handleGenerate = async () => {
     if (!selected) return
     setLoading(true)
     try {
-      const wb = await exportForParty(selected, entries, withdrawals, {
+      const wb = await exportForParty(selected, allEntries, allWithdrawals, {
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
       })
@@ -125,7 +161,9 @@ export function PartyReportModal({ open, onClose, parties, entries, withdrawals 
                 Change
               </button>
             </div>
-            {partyStats && (
+            {dataLoading ? (
+              <div className="py-2"><TableSkeleton rows={1} columns={3} /></div>
+            ) : partyStats && (
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-blue-100">
                 <div>
                   <div className="text-[10px] font-medium text-gray-500 uppercase">Collection</div>
@@ -217,7 +255,7 @@ export function PartyReportModal({ open, onClose, parties, entries, withdrawals 
           <Button
             type="button"
             onClick={handleGenerate}
-            disabled={!selected || loading}
+            disabled={!selected || loading || dataLoading}
             className="w-full sm:w-auto"
           >
             {loading ? (

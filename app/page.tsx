@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import DashboardLayout from './dashboard-layout'
+import { supabase } from '../lib/supabaseClient'
 import { useCollections } from '../lib/hooks/useCollections'
 import { useParties } from '../lib/hooks/useParties'
-import { useInfiniteScroll } from '../lib/hooks/useInfiniteScroll'
+import { useServerInfiniteScroll } from '../lib/hooks/useInfiniteScroll'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { StatsCard } from '../components/ui/StatsCard'
@@ -16,7 +17,7 @@ import { exportForSelf, writeWorkbookToFile } from '../lib/cashCollectionService
 const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
 
 export default function DailyCashCollectionDashboard() {
-  const { entries, loading, addEntry, getTotalForDate } = useCollections()
+  const { addEntry, getTotalForDate } = useCollections()
   const { parties } = useParties()
 
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0])
@@ -27,19 +28,30 @@ export default function DailyCashCollectionDashboard() {
   const [partySearch, setPartySearch] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
   const [totalToday, setTotalToday] = useState(0)
+  const [partyTodayTotal, setPartyTodayTotal] = useState(0)
   const [adding, setAdding] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (date) getTotalForDate(date).then(setTotalToday)
-  }, [date, entries, getTotalForDate])
+  const amountRef = useRef<HTMLInputElement>(null)
 
   const today = new Date().toISOString().split('T')[0]
 
-  const todayEntries = useMemo(
-    () => entries.filter(e => e.date === today),
-    [entries, today]
-  )
+  useEffect(() => {
+    if (date) getTotalForDate(date).then(setTotalToday)
+  }, [date, getTotalForDate])
+
+  const todayFetcher = useCallback(async (offset: number, limit: number) => {
+    const { data, error, count } = await supabase
+      .from('cash_collections')
+      .select('*', { count: 'exact' })
+      .eq('date', today)
+      .order('date', { ascending: false })
+      .order('id', { ascending: false })
+      .range(offset, offset + limit - 1)
+    if (error) return { data: [], total: 0 }
+    return { data: data || [], total: count }
+  }, [today])
+
+  const { items: todayEntries, isLoading: todayLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(todayFetcher, [todayFetcher])
 
   const filteredParties = useMemo(() => {
     if (!partySearch) return []
@@ -49,20 +61,23 @@ export default function DailyCashCollectionDashboard() {
     )
   }, [parties, partySearch])
 
-  const handlePartySelect = (party: typeof parties[0]) => {
+  const handlePartySelect = async (party: typeof parties[0]) => {
     setAccountNo(party.account_no)
     setPartyName(party.name)
     setPartySearch(`${party.name} (${party.account_no})`)
     setShowDropdown(false)
+    const { data } = await supabase
+      .from('cash_collections')
+      .select('amount')
+      .eq('date', today)
+      .eq('account_no', party.account_no)
+    setPartyTodayTotal((data || []).reduce((s, e) => s + e.amount, 0))
     setTimeout(() => amountRef.current?.focus(), 0)
   }
-
-  const amountRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!date || !accountNo || !amount) return
-
     if (accountNo.length !== 3 || isNaN(Number(accountNo))) return
     const amt = parseFloat(amount)
     if (isNaN(amt) || amt <= 0) return
@@ -70,10 +85,12 @@ export default function DailyCashCollectionDashboard() {
     setAdding(true)
     const result = await addEntry({ date, account_no: accountNo, amount: amt, collector })
     if (result) {
+      reload()
       setAmount('')
       setAccountNo('')
       setPartyName('')
       setPartySearch('')
+      setPartyTodayTotal(0)
       if (date === today) {
         const t = await getTotalForDate(date)
         setTotalToday(t)
@@ -84,18 +101,15 @@ export default function DailyCashCollectionDashboard() {
   }
 
   const handleExport = async () => {
-    const wb = await exportForSelf(entries, parties, undefined, { fromDate: today, toDate: today })
-    const filename = `DSS_${today}.xlsx`
-    writeWorkbookToFile(wb, filename)
+    const { data } = await supabase
+      .from('cash_collections')
+      .select('*')
+      .eq('date', today)
+    const wb = await exportForSelf(data || [], parties, undefined, { fromDate: today, toDate: today })
+    writeWorkbookToFile(wb, `DSS_${today}.xlsx`)
   }
 
-  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
-    totalItems: todayEntries.length,
-    initialBatch: 20,
-    batchSize: 20,
-  })
-
-  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
+  if (todayLoading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
@@ -196,9 +210,7 @@ export default function DailyCashCollectionDashboard() {
                   </svg>
                   <div>
                     <p className="text-xs text-blue-600 font-medium">Total from {partyName}</p>
-                    <p className="text-lg font-bold text-green-700">
-                      Rs. {entries.filter(e => e.account_no === accountNo).reduce((s, e) => s + e.amount, 0).toFixed(2)}
-                    </p>
+                    <p className="text-lg font-bold text-green-700">Rs. {partyTodayTotal.toFixed(2)}</p>
                   </div>
                 </div>
               )}
@@ -243,7 +255,7 @@ export default function DailyCashCollectionDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {todayEntries.slice(0, visibleCount).map(entry => {
+                  {todayEntries.map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">

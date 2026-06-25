@@ -1,32 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useCallback } from 'react'
 import { supabase, type CashCollectionEntry } from '../supabaseClient'
 import { useToast } from './useToast'
 
 export function useCollections() {
-  const [entries, setEntries] = useState<CashCollectionEntry[]>([])
-  const [loading, setLoading] = useState(true)
   const { addToast } = useToast()
-
-  const load = useCallback(async () => {
-    try {
-      setLoading(true)
-      const { data, error } = await supabase
-        .from('cash_collections')
-        .select('*')
-        .order('date', { ascending: false })
-
-      if (error) throw error
-      setEntries(data || [])
-    } catch {
-      addToast('Failed to load collections', 'error')
-    } finally {
-      setLoading(false)
-    }
-  }, [addToast])
-
-  useEffect(() => { load() }, [load])
 
   const addEntry = useCallback(async (entry: Omit<CashCollectionEntry, 'id' | 'created_at'>) => {
     const { data, error } = await supabase
@@ -36,10 +15,9 @@ export function useCollections() {
       .single()
 
     if (error) { addToast('Failed to add entry', 'error'); return null }
-    await load()
     addToast('Entry added successfully', 'success')
     return data
-  }, [load, addToast])
+  }, [addToast])
 
   const updateEntry = useCallback(async (id: number, updates: Partial<CashCollectionEntry>) => {
     const { data, error } = await supabase
@@ -50,10 +28,9 @@ export function useCollections() {
       .single()
 
     if (error) { addToast('Failed to update entry', 'error'); return null }
-    await load()
     addToast('Entry updated successfully', 'success')
     return data
-  }, [load, addToast])
+  }, [addToast])
 
   const deleteEntry = useCallback(async (id: number) => {
     const { error } = await supabase
@@ -62,18 +39,16 @@ export function useCollections() {
       .eq('id', id)
 
     if (error) { addToast('Failed to delete entry', 'error'); return false }
-    await load()
     addToast('Entry deleted successfully', 'success')
     return true
-  }, [load, addToast])
+  }, [addToast])
 
   const getFiltered = useCallback(async (date?: string | null, accountNo?: string | null) => {
-    let query = supabase.from('cash_collections').select('*').order('date', { ascending: false })
+    let query = supabase.from('cash_collections').select('*').order('date', { ascending: false }).order('id', { ascending: false })
     if (date) query = query.eq('date', date)
     if (accountNo) query = query.eq('account_no', accountNo)
     const { data, error } = await query
     if (error) { addToast('Failed to filter', 'error'); return [] }
-    setEntries(data || [])
     return data || []
   }, [addToast])
 
@@ -86,5 +61,5 @@ export function useCollections() {
     return (data || []).reduce((sum, e) => sum + e.amount, 0)
   }, [])
 
-  return { entries, loading, setEntries, addEntry, updateEntry, deleteEntry, getFiltered, getTotalForDate, reload: load }
+  return { addEntry, updateEntry, deleteEntry, getFiltered, getTotalForDate }
 }

@@ -1,10 +1,8 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useParties } from '../../lib/hooks/useParties'
-import { useCollections } from '../../lib/hooks/useCollections'
-import { useWithdrawals } from '../../lib/hooks/useWithdrawals'
 import { useInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -15,11 +13,10 @@ import { TableSkeleton } from '../../components/ui/TableSkeleton'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { PartyReportModal } from '../../components/PartyReportModal'
 import { useToast } from '../../lib/hooks/useToast'
+import { getPartyCollectionTotals, getPartyWithdrawalTotals } from '../../lib/cashCollectionService'
 
 export default function MasterDataPage() {
   const { parties, loading, addParty, updateParty, deleteParty } = useParties()
-  const { entries } = useCollections()
-  const { withdrawals } = useWithdrawals()
 
   const [name, setName] = useState('')
   const [accountNo, setAccountNo] = useState('')
@@ -28,6 +25,20 @@ export default function MasterDataPage() {
   const [search, setSearch] = useState('')
   const [reportOpen, setReportOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [collTotals, setCollTotals] = useState<Record<string, number>>({})
+  const [wdTotals, setWdTotals] = useState<Record<string, number>>({})
+  const [totalsLoading, setTotalsLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      getPartyCollectionTotals(),
+      getPartyWithdrawalTotals(),
+    ]).then(([c, w]) => {
+      setCollTotals(c)
+      setWdTotals(w)
+      setTotalsLoading(false)
+    })
+  }, [])
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -55,17 +66,13 @@ export default function MasterDataPage() {
   }, [parties, search])
 
   const partyStats = useMemo(() => {
-    const collMap = new Map<string, number>()
-    const wdMap = new Map<string, number>()
-    entries.forEach(e => collMap.set(e.account_no, (collMap.get(e.account_no) || 0) + e.amount))
-    withdrawals.forEach(w => wdMap.set(w.account_no, (wdMap.get(w.account_no) || 0) + w.amount))
     return parties.map(p => ({
       ...p,
-      totalCollection: collMap.get(p.account_no) || 0,
-      totalWithdrawal: wdMap.get(p.account_no) || 0,
-      net: (collMap.get(p.account_no) || 0) - (wdMap.get(p.account_no) || 0),
+      totalCollection: collTotals[p.account_no] || 0,
+      totalWithdrawal: wdTotals[p.account_no] || 0,
+      net: (collTotals[p.account_no] || 0) - (wdTotals[p.account_no] || 0),
     }))
-  }, [parties, entries, withdrawals])
+  }, [parties, collTotals, wdTotals])
 
   const visibleStats = useMemo(() => {
     if (!search) return partyStats
@@ -81,7 +88,7 @@ export default function MasterDataPage() {
     batchSize: 20,
   })
 
-  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
+  if (loading && totalsLoading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
@@ -284,8 +291,6 @@ export default function MasterDataPage() {
         open={reportOpen}
         onClose={() => setReportOpen(false)}
         parties={parties}
-        entries={entries}
-        withdrawals={withdrawals}
       />
     </DashboardLayout>
   )

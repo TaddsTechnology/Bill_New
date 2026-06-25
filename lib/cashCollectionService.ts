@@ -622,7 +622,7 @@ export async function getFilteredEntries(date?: string | null, accountNo?: strin
   let query = supabase
     .from('cash_collections')
     .select('*')
-    .order('date', { ascending: false })
+    .order('date', { ascending: false }).order('id', { ascending: false })
   
   if (date) {
     query = query.eq('date', date)
@@ -826,7 +826,7 @@ export async function getAllCollectionsForParty(accountNo: string) {
     .from('cash_collections')
     .select('*')
     .eq('account_no', accountNo)
-    .order('date', { ascending: false })
+    .order('date', { ascending: false }).order('id', { ascending: false })
   
   if (error) {
     console.error('Error fetching collections for party:', error)
@@ -843,7 +843,7 @@ export async function getAllWithdrawals() {
   const { data, error } = await supabase
     .from('withdrawals')
     .select('*')
-    .order('date', { ascending: false })
+    .order('date', { ascending: false }).order('id', { ascending: false })
 
   if (error) {
     console.error('Error fetching withdrawals:', error)
@@ -912,7 +912,7 @@ export async function getFilteredWithdrawals(date?: string | null, category?: st
   let query = supabase
     .from('withdrawals')
     .select('*')
-    .order('date', { ascending: false })
+    .order('date', { ascending: false }).order('id', { ascending: false })
 
   if (date) {
     query = query.eq('date', date)
@@ -954,6 +954,63 @@ export async function getTotalWithdrawalsForDate(date: string) {
  */
 export async function exportEntriesToExcel(entries: CashCollectionEntry[], parties: Party[], withdrawals?: Withdrawal[]) {
   return exportForSelf(entries, parties, withdrawals)
+}
+
+/**
+ * Fetch per-party collection totals from the server.
+ * Returns a map of account_no → total amount.
+ */
+export async function getPartyCollectionTotals(): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('cash_collections')
+    .select('account_no, amount')
+  const map: Record<string, number> = {}
+  ;(data || []).forEach(e => {
+    map[e.account_no] = (map[e.account_no] || 0) + e.amount
+  })
+  return map
+}
+
+/**
+ * Fetch per-party withdrawal totals from the server.
+ * Returns a map of account_no → total amount.
+ */
+export async function getPartyWithdrawalTotals(): Promise<Record<string, number>> {
+  const { data } = await supabase
+    .from('withdrawals')
+    .select('account_no, amount')
+  const map: Record<string, number> = {}
+  ;(data || []).forEach(e => {
+    map[e.account_no] = (map[e.account_no] || 0) + e.amount
+  })
+  return map
+}
+
+/**
+ * Delete all collections and withdrawals for a given year.
+ * Returns { collectionsDeleted, withdrawalsDeleted }.
+ */
+export async function deleteYearEntries(year: string): Promise<{ collectionsDeleted: number; withdrawalsDeleted: number }> {
+  const { count: collCount, error: collErr } = await supabase
+    .from('cash_collections')
+    .delete()
+    .gte('date', `${year}-01-01`)
+    .lte('date', `${year}-12-31`)
+
+  if (collErr) throw collErr
+
+  const { count: wdCount, error: wdErr } = await supabase
+    .from('withdrawals')
+    .delete()
+    .gte('date', `${year}-01-01`)
+    .lte('date', `${year}-12-31`)
+
+  if (wdErr) throw wdErr
+
+  return {
+    collectionsDeleted: collCount ?? 0,
+    withdrawalsDeleted: wdCount ?? 0,
+  }
 }
 
 /**

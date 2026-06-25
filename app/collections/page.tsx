@@ -1,10 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useCollections } from '../../lib/hooks/useCollections'
 import { useParties } from '../../lib/hooks/useParties'
-import { useInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
+import { useServerInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
+import { supabase } from '../../lib/supabaseClient'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Spinner } from '../../components/ui/Spinner'
@@ -17,7 +18,7 @@ import { useToast } from '../../lib/hooks/useToast'
 const COLLECTORS = ['Kalpesh', 'Sanjay', 'Supan', 'Vipul']
 
 export default function CollectionsPage() {
-  const { entries, loading, updateEntry, deleteEntry, getFiltered, reload } = useCollections()
+  const { updateEntry, deleteEntry } = useCollections()
   const { parties } = useParties()
 
   const { addToast } = useToast()
@@ -26,9 +27,21 @@ export default function CollectionsPage() {
   const [editEntry, setEditEntry] = useState<{ id: number; date: string; amount: string; collector: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
-  const handleFilter = async (e: React.FormEvent) => {
+  const fetcher = useCallback(async (offset: number, limit: number) => {
+    let query = supabase.from('cash_collections').select('*', { count: 'exact' })
+      .order('date', { ascending: false }).order('id', { ascending: false })
+    if (filterDate) query = query.eq('date', filterDate)
+    if (filterAccount) query = query.eq('account_no', filterAccount)
+    const { data, error, count } = await query.range(offset, offset + limit - 1)
+    if (error) return { data: [], total: 0 }
+    return { data: data || [], total: count }
+  }, [filterDate, filterAccount])
+
+  const { items: entries, isLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(fetcher, [fetcher])
+
+  const handleFilter = (e: React.FormEvent) => {
     e.preventDefault()
-    await getFiltered(filterDate || null, filterAccount || null)
+    reload()
   }
 
   const handleEdit = async (e: React.FormEvent) => {
@@ -40,17 +53,12 @@ export default function CollectionsPage() {
       collector: editEntry.collector,
     })
     setEditEntry(null)
+    reload()
   }
 
   const formatDate = (d: string) => new Date(d).toLocaleDateString('en-GB')
 
-  const { visibleCount, sentinelRef, hasMore } = useInfiniteScroll({
-    totalItems: entries.length,
-    initialBatch: 20,
-    batchSize: 20,
-  })
-
-  if (loading) return <DashboardLayout><Spinner /></DashboardLayout>
+  if (isLoading) return <DashboardLayout><Spinner /></DashboardLayout>
 
   return (
     <DashboardLayout>
@@ -102,7 +110,7 @@ export default function CollectionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {entries.slice(0, visibleCount).map(entry => {
+                  {entries.map(entry => {
                     const party = parties.find(p => p.account_no === entry.account_no)
                     return (
                       <tr key={entry.id} className="hover:bg-gray-50/50 transition-colors">
@@ -176,6 +184,7 @@ export default function CollectionsPage() {
           await deleteEntry(confirmDelete)
           addToast('Entry deleted', 'success')
           setConfirmDelete(null)
+          reload()
         }}
         onCancel={() => setConfirmDelete(null)}
       />
