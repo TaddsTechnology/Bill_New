@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from 'react'
 import DashboardLayout from '../dashboard-layout'
-import { supabase, type Withdrawal } from '../../lib/supabaseClient'
+import { supabase, type Withdrawal, type CashCollectionEntry } from '../../lib/supabaseClient'
 import { useParties } from '../../lib/hooks/useParties'
 import { useToast } from '../../lib/hooks/useToast'
 import { useServerInfiniteScroll } from '../../lib/hooks/useInfiniteScroll'
@@ -21,6 +21,8 @@ export default function ReportsPage() {
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
+  const [exportFromDate, setExportFromDate] = useState('')
+  const [exportToDate, setExportToDate] = useState('')
   const [totalCollection, setTotalCollection] = useState(0)
   const [totalWithdrawal, setTotalWithdrawal] = useState(0)
   const [totalsLoading, setTotalsLoading] = useState(true)
@@ -80,32 +82,55 @@ export default function ReportsPage() {
     setTimeout(() => { reload(); refreshTotals() }, 0)
   }
 
-  const fetchAllForExport = useCallback(async () => {
-    let query = supabase.from('cash_collections').select('*')
-      .order('date', { ascending: false }).order('id', { ascending: false })
-    if (filterFromDate) query = query.gte('date', filterFromDate)
-    if (filterToDate) query = query.lte('date', filterToDate)
-    if (filterAccount) query = query.eq('account_no', filterAccount)
-    const { data } = await query
-    return data || []
+  const PAGE_SIZE = 1000
+
+  const fetchAllForExport = useCallback(async (fromDate?: string, toDate?: string) => {
+    const fd = fromDate || filterFromDate
+    const td = toDate || filterToDate
+    const allData: CashCollectionEntry[] = []
+    let page = 0
+    while (true) {
+      let query = supabase.from('cash_collections').select('*')
+        .order('date', { ascending: false }).order('id', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      if (fd) query = query.gte('date', fd)
+      if (td) query = query.lte('date', td)
+      if (filterAccount) query = query.eq('account_no', filterAccount)
+      const { data } = await query
+      if (!data || data.length === 0) break
+      allData.push(...data)
+      if (data.length < PAGE_SIZE) break
+      page++
+    }
+    return allData
   }, [filterFromDate, filterToDate, filterAccount])
 
-  const fetchAllWithdrawals = useCallback(async () => {
-    let query = supabase.from('withdrawals').select('*')
-      .order('date', { ascending: false }).order('id', { ascending: false })
-    if (filterFromDate) query = query.gte('date', filterFromDate)
-    if (filterToDate) query = query.lte('date', filterToDate)
-    const { data } = await query
-    return (data || []) as Withdrawal[]
+  const fetchAllWithdrawals = useCallback(async (fromDate?: string, toDate?: string) => {
+    const fd = fromDate || filterFromDate
+    const td = toDate || filterToDate
+    const allData: Withdrawal[] = []
+    let page = 0
+    while (true) {
+      let query = supabase.from('withdrawals').select('*')
+        .order('date', { ascending: false }).order('id', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+      if (fd) query = query.gte('date', fd)
+      if (td) query = query.lte('date', td)
+      const { data } = await query
+      if (!data || data.length === 0) break
+      allData.push(...data)
+      if (data.length < PAGE_SIZE) break
+      page++
+    }
+    return allData
   }, [filterFromDate, filterToDate])
 
   const exportSelf = async () => {
     try {
-      const [allEntries, allWithdrawals] = await Promise.all([fetchAllForExport(), fetchAllWithdrawals()])
-      const wb = await exportForSelf(allEntries, parties, allWithdrawals, {
-        fromDate: filterFromDate || undefined,
-        toDate: filterToDate || undefined,
-      })
+      const fd = exportFromDate || undefined
+      const td = exportToDate || undefined
+      const [allEntries, allWithdrawals] = await Promise.all([fetchAllForExport(fd, td), fetchAllWithdrawals(fd, td)])
+      const wb = await exportForSelf(allEntries, parties, allWithdrawals, { fromDate: fd, toDate: td })
       writeWorkbookToFile(wb, 'For Self.xlsx')
       addToast('Personal report exported', 'success')
     } catch {
@@ -115,7 +140,9 @@ export default function ReportsPage() {
 
   const exportBank = async () => {
     try {
-      const allEntries = await fetchAllForExport()
+      const fd = exportFromDate || undefined
+      const td = exportToDate || undefined
+      const allEntries = await fetchAllForExport(fd, td)
       const ws = await exportForBank(allEntries)
       const XLSX = await import('xlsx-js-style')
       const wb = XLSX.utils.book_new()
@@ -197,6 +224,16 @@ export default function ReportsPage() {
             </svg>} />
         </div>
 
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Export From Date</label>
+            <input type="date" value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} className="input-field" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Export To Date</label>
+            <input type="date" value={exportToDate} onChange={e => setExportToDate(e.target.value)} className="input-field" />
+          </div>
+        </div>
         <div className="flex flex-col sm:flex-row gap-3">
           <Button onClick={exportSelf} variant="success" size="lg" className="flex-1" disabled={entries.length === 0}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

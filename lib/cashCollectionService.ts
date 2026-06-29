@@ -150,12 +150,16 @@ function buildDssWorksheet(
   toDate: string
 ) {
 
-  // Days that have at least one collection in range
-  const daysInRange = new Set<string>()
-  entries.forEach(e => {
-    if (e.date >= fromDate && e.date <= toDate) daysInRange.add(e.date)
-  })
-  const dayList = Array.from(daysInRange).sort()
+  // All days in the date range (including days with no data)
+  const dayList: string[] = []
+  const start = new Date(fromDate + 'T00:00:00Z')
+  const end = new Date(toDate + 'T00:00:00Z')
+  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+    const y = d.getUTCFullYear()
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    dayList.push(`${y}-${m}-${day}`)
+  }
   const dayNumbers = dayList.map(dayOfMonth)
 
   // Build party -> day -> amount map
@@ -324,8 +328,12 @@ export async function exportForSelf(
   const sortedKeys = Array.from(monthBuckets.keys()).sort()
   sortedKeys.forEach((key) => {
     const monthEntries = monthBuckets.get(key)!
-    const monthFrom = monthEntries.map(e => e.date).sort()[0]
-    const monthTo = monthEntries.map(e => e.date).sort().reverse()[0]
+    const [year, month] = key.split('-').map(Number)
+    const monthFirst = `${year}-${String(month).padStart(2, '0')}-01`
+    const lastDayNum = new Date(year, month, 0).getDate()
+    const monthLast = `${year}-${String(month).padStart(2, '0')}-${String(lastDayNum).padStart(2, '0')}`
+    const monthFrom = fromDate > monthFirst ? fromDate : monthFirst
+    const monthTo = toDate < monthLast ? toDate : monthLast
     const sheetName = formatMonthYear(monthFrom)
     const ws = buildDssWorksheet(monthEntries, parties, monthFrom, monthTo)
     XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31))
