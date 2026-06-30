@@ -29,6 +29,7 @@ export default function DailyCashCollectionDashboard() {
   const [showDropdown, setShowDropdown] = useState(false)
   const [totalToday, setTotalToday] = useState(0)
   const [partyTodayTotal, setPartyTodayTotal] = useState(0)
+  const [partyPastTotal, setPartyPastTotal] = useState(0)
   const [adding, setAdding] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const amountRef = useRef<HTMLInputElement>(null)
@@ -66,12 +67,14 @@ export default function DailyCashCollectionDashboard() {
     setPartyName(party.name)
     setPartySearch(`${party.name} (${party.account_no})`)
     setShowDropdown(false)
-    const { data } = await supabase
-      .from('cash_collections')
-      .select('amount')
-      .eq('date', today)
-      .eq('account_no', party.account_no)
-    setPartyTodayTotal((data || []).reduce((s, e) => s + e.amount, 0))
+    const [pastRes, todayRes] = await Promise.all([
+      supabase.from('cash_collections').select('amount')
+        .lt('date', today).eq('account_no', party.account_no),
+      supabase.from('cash_collections').select('amount')
+        .eq('date', today).eq('account_no', party.account_no),
+    ])
+    setPartyPastTotal((pastRes.data || []).reduce((s, e) => s + e.amount, 0))
+    setPartyTodayTotal((todayRes.data || []).reduce((s, e) => s + e.amount, 0))
     setTimeout(() => amountRef.current?.focus(), 0)
   }
 
@@ -90,6 +93,7 @@ export default function DailyCashCollectionDashboard() {
       setAccountNo('')
       setPartyName('')
       setPartySearch('')
+      setPartyPastTotal(0)
       setPartyTodayTotal(0)
       if (date === today) {
         const t = await getTotalForDate(date)
@@ -210,7 +214,10 @@ export default function DailyCashCollectionDashboard() {
                   </svg>
                   <div>
                     <p className="text-xs text-blue-600 font-medium">Total from {partyName}</p>
-                    <p className="text-lg font-bold text-green-700">Rs. {partyTodayTotal.toFixed(2)}</p>
+                    <p className="text-lg font-bold text-green-700">Rs. {(partyPastTotal + partyTodayTotal + (parseFloat(amount) || 0)).toFixed(2)}</p>
+                    <p className="text-xs text-gray-500">
+                      Past: Rs. {partyPastTotal.toFixed(2)} + Today: Rs. {(partyTodayTotal + (parseFloat(amount) || 0)).toFixed(2)}
+                    </p>
                   </div>
                 </div>
               )}

@@ -99,6 +99,33 @@ const STYLES = {
   } as CellStyle,
   rowEven: {
     fill: { fgColor: { rgb: 'F8F9FA' } },
+  },
+  withdrawalHeader: {
+    font: { bold: true, color: { rgb: 'C00000' } },
+    fill: { fgColor: { rgb: 'FCE4EC' } },
+    alignment: { horizontal: 'center', vertical: 'center' },
+    border: BORDER,
+  } as CellStyle,
+  withdrawalCell: {
+    font: { sz: 10, color: { rgb: 'C00000' } },
+    alignment: { horizontal: 'right' },
+    numFmt: '#,##0.00',
+    border: BORDER,
+    fill: { fgColor: { rgb: 'FFF0F0' } },
+  } as CellStyle,
+  totalWithdrawal: {
+    font: { bold: true, sz: 10, color: { rgb: 'C00000' } },
+    alignment: { horizontal: 'right' },
+    numFmt: '#,##0.00',
+    border: BORDER,
+    fill: { fgColor: { rgb: 'FCE4EC' } },
+  } as CellStyle,
+  netCell: {
+    font: { bold: true, sz: 10 },
+    alignment: { horizontal: 'right' },
+    numFmt: '#,##0.00',
+    border: BORDER,
+    fill: { fgColor: { rgb: 'FFF2CC' } },
   } as CellStyle,
 }
 
@@ -146,6 +173,8 @@ function dayOfMonth(date: string): number {
 function buildDssWorksheet(
   entries: CashCollectionEntry[],
   parties: Party[],
+  withdrawals: Withdrawal[],
+  opBalanceMap: Map<string, number>,
   fromDate: string,
   toDate: string
 ) {
@@ -162,7 +191,7 @@ function buildDssWorksheet(
   }
   const dayNumbers = dayList.map(dayOfMonth)
 
-  // Build party -> day -> amount map
+  // Build party -> day -> collection amount map
   const partyAmountMap = new Map<string, Map<number, number>>()
   entries.forEach(e => {
     if (e.date < fromDate || e.date > toDate) return
@@ -172,21 +201,32 @@ function buildDssWorksheet(
     m.set(day, (m.get(day) || 0) + e.amount)
   })
 
-  // Compute opening balance per party:
-  // OP.BALANCE = sum of all collections for that party before fromDate
-  const opBalanceMap = new Map<string, number>()
-  entries.forEach(e => {
-    if (e.date >= fromDate) return
-    opBalanceMap.set(e.account_no, (opBalanceMap.get(e.account_no) || 0) + e.amount)
+  // Build party -> day -> withdrawal amount map
+  const partyWithdrawalMap = new Map<string, Map<number, number>>()
+  withdrawals.forEach(w => {
+    if (w.date < fromDate || w.date > toDate) return
+    const day = dayOfMonth(w.date)
+    if (!partyWithdrawalMap.has(w.account_no)) partyWithdrawalMap.set(w.account_no, new Map())
+    const m = partyWithdrawalMap.get(w.account_no)!
+    m.set(day, (m.get(day) || 0) + w.amount)
   })
 
-  // Filter parties that have at least one collection in range or have an opening balance
+  // Filter parties that have activity in the month or a non-zero opening balance
   const relevantParties = parties
-    .filter(p => partyAmountMap.has(p.account_no) || opBalanceMap.has(p.account_no))
+    .filter(p => partyAmountMap.has(p.account_no) || partyWithdrawalMap.has(p.account_no) || (opBalanceMap.get(p.account_no) || 0) !== 0)
     .sort((a, b) => a.account_no.localeCompare(b.account_no))
 
   // Build the AOA data
   const aoa: (string | number)[][] = []
+
+  // Interleave helper: [c1, w1, c2, w2, ...]
+  function interleave(cValues: number[], wValues: number[]): number[] {
+    const result: number[] = []
+    for (let i = 0; i < cValues.length; i++) {
+      result.push(cValues[i], wValues[i])
+    }
+    return result
+  }
 
   // Row 1: bank name (col B)
   aoa.push(['', 'PROGRESSIVE MERC. CO-OP BANK, '])
@@ -198,30 +238,42 @@ function buildDssWorksheet(
   const monthYear = ` ${formatMonthYear(fromDate)}     `
   aoa.push(['', monthYear])
   // Row 5: column headers
-  const headerRow: (string | number)[] = ['ACCOUNT NO.', 'NAME', 'OP.BALANCE', ...dayNumbers, 'TOTAL']
+  const dayHeaders = dayNumbers.flatMap(d => [d, `${d}W`])
+  const headerRow: (string | number)[] = ['ACCOUNT NO.', 'NAME', 'OP.BALANCE', ...dayHeaders, 'TOTAL COLL', 'TOTAL WITH', 'NET']
   aoa.push(headerRow)
 
   // Data rows
   relevantParties.forEach(party => {
     const opBal = opBalanceMap.get(party.account_no) || 0
     const dayMap = partyAmountMap.get(party.account_no) || new Map<number, number>()
+    const dayWithMap = partyWithdrawalMap.get(party.account_no) || new Map<number, number>()
     const dayValues = dayNumbers.map(d => dayMap.get(d) || 0)
-    const monthTotal = dayValues.reduce((s, v) => s + v, 0)
-    const closingBal = opBal + monthTotal
+    const withdrawalDayValues = dayNumbers.map(d => dayWithMap.get(d) || 0)
+    const monthCollection = dayValues.reduce((s, v) => s + v, 0)
+    const monthWithdrawal = withdrawalDayValues.reduce((s, v) => s + v, 0)
+    const netBalance = opBal + monthCollection - monthWithdrawal
     const accountNo5 = String(toPartyCode(party.account_no))
-    aoa.push([accountNo5, party.name, opBal, ...dayValues, closingBal])
+    aoa.push([accountNo5, party.name, opBal, ...interleave(dayValues, withdrawalDayValues), monthCollection, monthWithdrawal, netBalance])
   })
 
   // Convert to worksheet
   const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+  // Column count helper
+  const dayColCount = dayNumbers.length * 2
+  const fixedStartCols = 3  // ACCOUNT NO. | NAME | OP.BALANCE
+  const fixedEndCols = 3   // TOTAL COLL | TOTAL WITH | NET
+  const totalCols = fixedStartCols + dayColCount + fixedEndCols
 
   // Set column widths
   const colWidths: { wch: number }[] = [
     { wch: 12 },  // ACCOUNT NO.
     { wch: 35 },  // NAME
     { wch: 12 },  // OP.BALANCE
-    ...dayNumbers.map(() => ({ wch: 8 })),  // day columns
-    { wch: 14 },  // TOTAL
+    ...dayNumbers.flatMap(() => [{ wch: 9 }, { wch: 9 }]),  // day pairs (coll, with)
+    { wch: 14 },  // TOTAL COLL
+    { wch: 14 },  // TOTAL WITH
+    { wch: 14 },  // NET
   ]
   ws['!cols'] = colWidths
 
@@ -244,10 +296,24 @@ function buildDssWorksheet(
   // Row 4 (month/year) - col B
   setCellStyle(ws, 'B4', STYLES.monthYear)
 
-  // Row 5 (column headers) - all columns
-  for (let c = 0; c < headerRow.length; c++) {
+  // Row 5 (column headers) - style each column based on type
+  for (let c = 0; c < totalCols; c++) {
     const ref = XLSX.utils.encode_cell({ r: 4, c })
-    setCellStyle(ws, ref, STYLES.colHeader)
+    if (c < fixedStartCols) {
+      setCellStyle(ws, ref, STYLES.colHeader)
+    } else if (c < fixedStartCols + dayColCount) {
+      // Day columns: even offset = collection, odd offset = withdrawal
+      const isWithdrawal = (c - fixedStartCols) % 2 === 1
+      setCellStyle(ws, ref, isWithdrawal ? STYLES.withdrawalHeader : STYLES.colHeader)
+    } else {
+      // Total columns
+      const totalColIndex = c - fixedStartCols - dayColCount
+      if (totalColIndex === 1) {
+        setCellStyle(ws, ref, STYLES.withdrawalHeader)  // TOTAL WITH
+      } else {
+        setCellStyle(ws, ref, STYLES.colHeader)  // TOTAL COLL or NET
+      }
+    }
   }
 
   // Data rows (starting at row 6, index 5)
@@ -267,17 +333,38 @@ function buildDssWorksheet(
     ref = XLSX.utils.encode_cell({ r: rowIdx, c: 2 })
     setCellStyle(ws, ref, { ...STYLES.amount, ...(isEven ? STYLES.rowEven : {}) })
 
-    // Day columns
+    // Day columns (interleaved: collection, withdrawal)
     dayNumbers.forEach((d, i) => {
-      ref = XLSX.utils.encode_cell({ r: rowIdx, c: 3 + i })
-      const val = aoa[rowIdx][3 + i] as number
-      const baseStyle = val > 0 ? STYLES.amountGreen : STYLES.amount
-      setCellStyle(ws, ref, { ...baseStyle, ...(isEven && val === 0 ? STYLES.rowEven : {}) })
+      const collCol = fixedStartCols + i * 2
+      const withCol = fixedStartCols + i * 2 + 1
+
+      // Collection cell
+      ref = XLSX.utils.encode_cell({ r: rowIdx, c: collCol })
+      const collVal = aoa[rowIdx][collCol] as number
+      const collStyle = collVal > 0 ? STYLES.amountGreen : STYLES.amount
+      setCellStyle(ws, ref, { ...collStyle, ...(isEven && collVal === 0 ? STYLES.rowEven : {}) })
+
+      // Withdrawal cell
+      ref = XLSX.utils.encode_cell({ r: rowIdx, c: withCol })
+      const withVal = aoa[rowIdx][withCol] as number
+      const withStyle = withVal > 0 ? STYLES.withdrawalCell : STYLES.amount
+      setCellStyle(ws, ref, { ...withStyle, ...(isEven && withVal === 0 ? STYLES.rowEven : {}) })
     })
 
-    // TOTAL (last column)
-    ref = XLSX.utils.encode_cell({ r: rowIdx, c: 3 + dayNumbers.length })
+    // TOTAL COLL column
+    const totalCollCol = fixedStartCols + dayColCount
+    ref = XLSX.utils.encode_cell({ r: rowIdx, c: totalCollCol })
     setCellStyle(ws, ref, STYLES.total)
+
+    // TOTAL WITH column
+    const totalWithCol = totalCollCol + 1
+    ref = XLSX.utils.encode_cell({ r: rowIdx, c: totalWithCol })
+    setCellStyle(ws, ref, STYLES.totalWithdrawal)
+
+    // NET column
+    const netCol = totalCollCol + 2
+    ref = XLSX.utils.encode_cell({ r: rowIdx, c: netCol })
+    setCellStyle(ws, ref, STYLES.netCell)
   })
 
   return ws
@@ -291,13 +378,15 @@ function buildDssWorksheet(
 export async function exportForSelf(
   entries: CashCollectionEntry[],
   parties: Party[],
-  _withdrawals?: Withdrawal[],
+  withdrawals?: Withdrawal[],
   options?: { fromDate?: string; toDate?: string }
 ) {
 
+  const wds = withdrawals || []
+
   // Determine date range
   const allDates = entries.map(e => e.date).filter(Boolean).sort()
-  if (allDates.length === 0) {
+  if (allDates.length === 0 && wds.length === 0) {
     const ws = XLSX.utils.aoa_to_sheet([['', 'No data to export']])
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'Empty')
@@ -306,14 +395,22 @@ export async function exportForSelf(
   const fromDate = options?.fromDate || allDates[0]
   const toDate = options?.toDate || allDates[allDates.length - 1]
 
-  // Group entries by year-month for sheet splitting
-  const monthBuckets = new Map<string, CashCollectionEntry[]>()
+  // Group entries and withdrawals by year-month for sheet splitting
+  type MonthBucket = { entries: CashCollectionEntry[]; withdrawals: Withdrawal[] }
+  const monthBuckets = new Map<string, MonthBucket>()
+  const ensureBucket = (date: string): MonthBucket => {
+    const d = new Date(date)
+    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+    if (!monthBuckets.has(key)) monthBuckets.set(key, { entries: [], withdrawals: [] })
+    return monthBuckets.get(key)!
+  }
   entries.forEach(e => {
     if (e.date < fromDate || e.date > toDate) return
-    const d = new Date(e.date)
-    const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
-    if (!monthBuckets.has(key)) monthBuckets.set(key, [])
-    monthBuckets.get(key)!.push(e)
+    ensureBucket(e.date).entries.push(e)
+  })
+  wds.forEach(w => {
+    if (w.date < fromDate || w.date > toDate) return
+    ensureBucket(w.date).withdrawals.push(w)
   })
 
   const wb = XLSX.utils.book_new()
@@ -324,10 +421,20 @@ export async function exportForSelf(
     return wb
   }
 
+  // Helper: compute opening balance per party as of a given date
+  const computeOpBalance = (beforeDate: string): Map<string, number> => {
+    const map = new Map<string, number>()
+    entries.filter(e => e.date < beforeDate)
+      .forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
+    wds.filter(w => w.date < beforeDate)
+      .forEach(w => map.set(w.account_no, (map.get(w.account_no) || 0) - w.amount))
+    return map
+  }
+
   // One sheet per month
   const sortedKeys = Array.from(monthBuckets.keys()).sort()
   sortedKeys.forEach((key) => {
-    const monthEntries = monthBuckets.get(key)!
+    const bucket = monthBuckets.get(key)!
     const [year, month] = key.split('-').map(Number)
     const monthFirst = `${year}-${String(month).padStart(2, '0')}-01`
     const lastDayNum = new Date(year, month, 0).getDate()
@@ -335,7 +442,8 @@ export async function exportForSelf(
     const monthFrom = fromDate > monthFirst ? fromDate : monthFirst
     const monthTo = toDate < monthLast ? toDate : monthLast
     const sheetName = formatMonthYear(monthFrom)
-    const ws = buildDssWorksheet(monthEntries, parties, monthFrom, monthTo)
+    const opBalances = computeOpBalance(monthFrom)
+    const ws = buildDssWorksheet(bucket.entries, parties, bucket.withdrawals, opBalances, monthFrom, monthTo)
     XLSX.utils.book_append_sheet(wb, ws, sheetName.substring(0, 31))
   })
 
@@ -353,7 +461,7 @@ export async function exportForSelf(
 export async function exportForBank(entries: CashCollectionEntry[]) {
 
   const sortedEntries = [...entries].sort((a, b) =>
-    new Date(a.date).getTime() - new Date(b.date).getTime()
+    a.account_no.localeCompare(b.account_no, undefined, { numeric: true })
   )
 
   const data = sortedEntries.map((entry, index) => [

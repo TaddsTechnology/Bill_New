@@ -21,8 +21,6 @@ export default function ReportsPage() {
   const [filterFromDate, setFilterFromDate] = useState('')
   const [filterToDate, setFilterToDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
-  const [exportFromDate, setExportFromDate] = useState('')
-  const [exportToDate, setExportToDate] = useState('')
   const filterFromDateRef = useRef('')
   const filterToDateRef = useRef('')
   const filterAccountRef = useRef('')
@@ -137,10 +135,8 @@ export default function ReportsPage() {
 
   const exportSelf = async () => {
     try {
-      const fd = exportFromDate || undefined
-      const td = exportToDate || undefined
-      const [allEntries, allWithdrawals] = await Promise.all([fetchAllForExport(fd, td), fetchAllWithdrawals(fd, td)])
-      const wb = await exportForSelf(allEntries, parties, allWithdrawals, { fromDate: fd, toDate: td })
+      const [allEntries, allWithdrawals] = await Promise.all([fetchAllForExport(), fetchAllWithdrawals()])
+      const wb = await exportForSelf(allEntries, parties, allWithdrawals)
       writeWorkbookToFile(wb, 'For Self.xlsx')
       addToast('Personal report exported', 'success')
     } catch {
@@ -150,9 +146,7 @@ export default function ReportsPage() {
 
   const exportBank = async () => {
     try {
-      const fd = exportFromDate || undefined
-      const td = exportToDate || undefined
-      const allEntries = await fetchAllForExport(fd, td)
+      const allEntries = await fetchAllForExport()
       const ws = await exportForBank(allEntries)
       const XLSX = await import('xlsx-js-style')
       const wb = XLSX.utils.book_new()
@@ -234,17 +228,7 @@ export default function ReportsPage() {
             </svg>} />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Export From Date</label>
-            <input type="date" value={exportFromDate} onChange={e => setExportFromDate(e.target.value)} className="input-field" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Export To Date</label>
-            <input type="date" value={exportToDate} onChange={e => setExportToDate(e.target.value)} className="input-field" />
-          </div>
-        </div>
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col sm:flex-row gap-3 mb-3">
           <Button onClick={exportSelf} variant="success" size="lg" className="flex-1" disabled={entries.length === 0}>
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
