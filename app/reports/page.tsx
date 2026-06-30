@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { supabase, type Withdrawal, type CashCollectionEntry } from '../../lib/supabaseClient'
 import { useParties } from '../../lib/hooks/useParties'
@@ -23,6 +23,9 @@ export default function ReportsPage() {
   const [filterAccount, setFilterAccount] = useState('')
   const [exportFromDate, setExportFromDate] = useState('')
   const [exportToDate, setExportToDate] = useState('')
+  const filterFromDateRef = useRef('')
+  const filterToDateRef = useRef('')
+  const filterAccountRef = useRef('')
   const [totalCollection, setTotalCollection] = useState(0)
   const [totalWithdrawal, setTotalWithdrawal] = useState(0)
   const [totalsLoading, setTotalsLoading] = useState(true)
@@ -51,15 +54,15 @@ export default function ReportsPage() {
   const entriesFetcher = useCallback(async (offset: number, limit: number) => {
     let query = supabase.from('cash_collections').select('*', { count: 'exact' })
       .order('date', { ascending: false }).order('id', { ascending: false })
-    if (filterFromDate) query = query.gte('date', filterFromDate)
-    if (filterToDate) query = query.lte('date', filterToDate)
-    if (filterAccount) query = query.eq('account_no', filterAccount)
+    if (filterFromDateRef.current) query = query.gte('date', filterFromDateRef.current)
+    if (filterToDateRef.current) query = query.lte('date', filterToDateRef.current)
+    if (filterAccountRef.current) query = query.eq('account_no', filterAccountRef.current)
     const { data, error, count } = await query.range(offset, offset + limit - 1)
     if (error) return { data: [], total: 0 }
     return { data: data || [], total: count }
-  }, [filterFromDate, filterToDate, filterAccount])
+  }, [])
 
-  const { items: entries, isLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(entriesFetcher, [entriesFetcher])
+  const { items: entries, isLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(entriesFetcher, [])
 
   const partyCollections = useMemo(() => {
     if (totalsLoading) return []
@@ -69,8 +72,11 @@ export default function ReportsPage() {
     return Array.from(map.entries()).map(([ac, amt]) => ({ name: pmap.get(ac) || `Unknown (${ac})`, amount: amt }))
   }, [entries, parties, totalsLoading])
 
-  const handleFilter = async (e: React.FormEvent) => {
+  const handleFilter = (e: React.FormEvent) => {
     e.preventDefault()
+    filterFromDateRef.current = filterFromDate
+    filterToDateRef.current = filterToDate
+    filterAccountRef.current = filterAccount
     reload()
     refreshTotals(filterFromDate || undefined, filterToDate || undefined)
   }
@@ -79,14 +85,18 @@ export default function ReportsPage() {
     setFilterFromDate('')
     setFilterToDate('')
     setFilterAccount('')
-    setTimeout(() => { reload(); refreshTotals() }, 0)
+    filterFromDateRef.current = ''
+    filterToDateRef.current = ''
+    filterAccountRef.current = ''
+    reload()
+    refreshTotals()
   }
 
   const PAGE_SIZE = 1000
 
   const fetchAllForExport = useCallback(async (fromDate?: string, toDate?: string) => {
-    const fd = fromDate || filterFromDate
-    const td = toDate || filterToDate
+    const fd = fromDate || filterFromDateRef.current
+    const td = toDate || filterToDateRef.current
     const allData: CashCollectionEntry[] = []
     let page = 0
     while (true) {
@@ -95,7 +105,7 @@ export default function ReportsPage() {
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
       if (fd) query = query.gte('date', fd)
       if (td) query = query.lte('date', td)
-      if (filterAccount) query = query.eq('account_no', filterAccount)
+      if (filterAccountRef.current) query = query.eq('account_no', filterAccountRef.current)
       const { data } = await query
       if (!data || data.length === 0) break
       allData.push(...data)
@@ -103,11 +113,11 @@ export default function ReportsPage() {
       page++
     }
     return allData
-  }, [filterFromDate, filterToDate, filterAccount])
+  }, [])
 
   const fetchAllWithdrawals = useCallback(async (fromDate?: string, toDate?: string) => {
-    const fd = fromDate || filterFromDate
-    const td = toDate || filterToDate
+    const fd = fromDate || filterFromDateRef.current
+    const td = toDate || filterToDateRef.current
     const allData: Withdrawal[] = []
     let page = 0
     while (true) {
@@ -123,7 +133,7 @@ export default function ReportsPage() {
       page++
     }
     return allData
-  }, [filterFromDate, filterToDate])
+  }, [])
 
   const exportSelf = async () => {
     try {
@@ -189,7 +199,7 @@ export default function ReportsPage() {
       setShowCleanupConfirm(false)
       setCleanupCount(null)
       reload()
-      refreshTotals(filterFromDate || undefined, filterToDate || undefined)
+      refreshTotals(filterFromDateRef.current || undefined, filterToDateRef.current || undefined)
     } catch {
       addToast('Failed to delete entries', 'error')
     } finally {

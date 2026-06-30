@@ -66,6 +66,7 @@ export default function WithdrawalsPage() {
     setTimeout(() => searchRef.current?.focus(), 0)
     const t = await getTotalForDate(date)
     setTotalToday(t)
+    reload()
   }
 
   const handleEdit = async (e: React.FormEvent) => {
