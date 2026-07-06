@@ -379,7 +379,8 @@ export async function exportForSelf(
   entries: CashCollectionEntry[],
   parties: Party[],
   withdrawals?: Withdrawal[],
-  options?: { fromDate?: string; toDate?: string }
+  options?: { fromDate?: string; toDate?: string },
+  preRangeBalances?: Map<string, number>
 ) {
 
   const wds = withdrawals || []
@@ -422,8 +423,9 @@ export async function exportForSelf(
   }
 
   // Helper: compute opening balance per party as of a given date
+  // Starts with pre-range balances (if any), then adds in-range entries before the cutoff
   const computeOpBalance = (beforeDate: string): Map<string, number> => {
-    const map = new Map<string, number>()
+    const map = new Map(preRangeBalances)
     entries.filter(e => e.date < beforeDate)
       .forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
     wds.filter(w => w.date < beforeDate)
@@ -1100,6 +1102,34 @@ export async function getPartyWithdrawalTotals(): Promise<Record<string, number>
     map[e.account_no] = (map[e.account_no] || 0) + e.amount
   })
   return map
+}
+
+/**
+ * Delete all collections and withdrawals for a given date range.
+ * Returns { collectionsDeleted, withdrawalsDeleted }.
+ */
+export async function deleteEntriesByDateRange(
+  fromDate: string,
+  toDate: string
+): Promise<{ collectionsDeleted: number; withdrawalsDeleted: number }> {
+  const { count: collCount, error: collErr } = await supabase
+    .from('cash_collections')
+    .delete()
+    .gte('date', fromDate).lte('date', toDate)
+
+  if (collErr) throw collErr
+
+  const { count: wdCount, error: wdErr } = await supabase
+    .from('withdrawals')
+    .delete()
+    .gte('date', fromDate).lte('date', toDate)
+
+  if (wdErr) throw wdErr
+
+  return {
+    collectionsDeleted: collCount ?? 0,
+    withdrawalsDeleted: wdCount ?? 0,
+  }
 }
 
 /**

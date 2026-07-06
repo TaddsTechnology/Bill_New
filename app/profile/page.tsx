@@ -2,15 +2,70 @@
 
 import { useState } from 'react'
 import DashboardLayout from '../dashboard-layout'
+import { useToast } from '../../lib/hooks/useToast'
+import { ConfirmModal } from '../../components/ui/ConfirmModal'
+import { Button } from '../../components/ui/Button'
+import { Card } from '../../components/ui/Card'
+import { supabase } from '../../lib/supabaseClient'
+import { deleteEntriesByDateRange } from '../../lib/cashCollectionService'
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('profile')
+  const { addToast } = useToast()
+  const [cleanupFromDate, setCleanupFromDate] = useState('')
+  const [cleanupToDate, setCleanupToDate] = useState('')
+  const [cleanupCount, setCleanupCount] = useState<{ collections: number; withdrawals: number } | null>(null)
+  const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false)
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
     { id: 'settings', name: 'Settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
     { id: 'about', name: 'About', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
   ]
+
+  const handleCleanupPreview = async () => {
+    if (!cleanupFromDate || !cleanupToDate) return
+    setCleanupLoading(true)
+    try {
+      const [collRes, wdRes] = await Promise.all([
+        supabase.from('cash_collections').select('amount', { count: 'exact', head: true })
+          .gte('date', cleanupFromDate).lte('date', cleanupToDate),
+        supabase.from('withdrawals').select('amount', { count: 'exact', head: true })
+          .gte('date', cleanupFromDate).lte('date', cleanupToDate),
+      ])
+      setCleanupCount({
+        collections: collRes.count ?? 0,
+        withdrawals: wdRes.count ?? 0,
+      })
+      if ((collRes.count ?? 0) === 0 && (wdRes.count ?? 0) === 0) {
+        addToast('No entries found for this period', 'info')
+      } else {
+        setShowCleanupConfirm(true)
+      }
+    } catch {
+      addToast('Failed to check data', 'error')
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
+
+  const handleCleanupConfirm = async () => {
+    if (!cleanupFromDate || !cleanupToDate) return
+    setCleanupLoading(true)
+    try {
+      const result = await deleteEntriesByDateRange(cleanupFromDate, cleanupToDate)
+      addToast(`Deleted ${result.collectionsDeleted} collections and ${result.withdrawalsDeleted} withdrawals`, 'success')
+      setShowCleanupConfirm(false)
+      setCleanupCount(null)
+      setCleanupFromDate('')
+      setCleanupToDate('')
+    } catch {
+      addToast('Failed to delete entries', 'error')
+    } finally {
+      setCleanupLoading(false)
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -147,16 +202,40 @@ export default function ProfilePage() {
               <div className="p-3 md:p-4 border-b border-gray-200">
                 <h2 className="text-lg md:text-xl font-semibold text-gray-800">Data Management</h2>
               </div>
-              <div className="p-3 md:p-4 space-y-3">
-                <button className="w-full md:w-auto btn-secondary">
-                  Export All Data
-                </button>
-                <button className="w-full md:w-auto btn-secondary">
-                  Import Data
-                </button>
-                <button className="w-full md:w-auto btn-danger">
-                  Clear All Data
-                </button>
+              <div className="p-3 md:p-4 space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-700 mb-2">Delete Entries by Date Range</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">From Date</label>
+                      <input type="date" value={cleanupFromDate} onChange={e => { setCleanupFromDate(e.target.value); setCleanupCount(null) }} className="input-field" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">To Date</label>
+                      <input type="date" value={cleanupToDate} onChange={e => { setCleanupToDate(e.target.value); setCleanupCount(null) }} className="input-field" />
+                    </div>
+                  </div>
+                  <Button
+                    onClick={handleCleanupPreview}
+                    disabled={!cleanupFromDate || !cleanupToDate || cleanupLoading}
+                    variant="danger"
+                    size="sm"
+                  >
+                    {cleanupLoading ? 'Checking...' : 'Check & Delete'}
+                  </Button>
+                  {cleanupCount && (
+                    <div className="mt-3 text-sm text-gray-600">
+                      {cleanupCount.collections > 0 || cleanupCount.withdrawals > 0 ? (
+                        <span>
+                          Found <strong>{cleanupCount.collections}</strong> collections and{' '}
+                          <strong>{cleanupCount.withdrawals}</strong> withdrawals from {cleanupFromDate} to {cleanupToDate}.
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">No entries in this date range.</span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -209,6 +288,16 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        open={showCleanupConfirm}
+        title={`Delete Data from ${cleanupFromDate} to ${cleanupToDate}`}
+        message={`Are you sure you want to permanently delete ${cleanupCount?.collections ?? 0} collections and ${cleanupCount?.withdrawals ?? 0} withdrawals from ${cleanupFromDate} to ${cleanupToDate}? This cannot be undone.`}
+        confirmLabel="Delete All"
+        onConfirm={handleCleanupConfirm}
+        onCancel={() => { setShowCleanupConfirm(false); setCleanupCount(null) }}
+        loading={cleanupLoading}
+      />
     </DashboardLayout>
   )
 }

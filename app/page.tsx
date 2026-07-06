@@ -67,14 +67,22 @@ export default function DailyCashCollectionDashboard() {
     setPartyName(party.name)
     setPartySearch(`${party.name} (${party.account_no})`)
     setShowDropdown(false)
-    const [pastRes, todayRes] = await Promise.all([
+    const [pastRes, todayRes, pastWdRes, todayWdRes] = await Promise.all([
       supabase.from('cash_collections').select('amount')
         .lt('date', today).eq('account_no', party.account_no),
       supabase.from('cash_collections').select('amount')
         .eq('date', today).eq('account_no', party.account_no),
+      supabase.from('withdrawals').select('amount')
+        .lt('date', today).eq('account_no', party.account_no),
+      supabase.from('withdrawals').select('amount')
+        .eq('date', today).eq('account_no', party.account_no),
     ])
-    setPartyPastTotal((pastRes.data || []).reduce((s, e) => s + e.amount, 0))
-    setPartyTodayTotal((todayRes.data || []).reduce((s, e) => s + e.amount, 0))
+    const pastColl = (pastRes.data || []).reduce((s, e) => s + e.amount, 0)
+    const todayColl = (todayRes.data || []).reduce((s, e) => s + e.amount, 0)
+    const pastWd = (pastWdRes.data || []).reduce((s, e) => s + e.amount, 0)
+    const todayWd = (todayWdRes.data || []).reduce((s, e) => s + e.amount, 0)
+    setPartyPastTotal(pastColl - pastWd)
+    setPartyTodayTotal(todayColl - todayWd)
     setTimeout(() => amountRef.current?.focus(), 0)
   }
 

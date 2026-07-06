@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useCollections } from '../../lib/hooks/useCollections'
 import { useParties } from '../../lib/hooks/useParties'
@@ -24,23 +24,27 @@ export default function CollectionsPage() {
   const { addToast } = useToast()
   const [filterDate, setFilterDate] = useState('')
   const [filterAccount, setFilterAccount] = useState('')
+  const filterDateRef = useRef('')
+  const filterAccountRef = useRef('')
   const [editEntry, setEditEntry] = useState<{ id: number; date: string; amount: string; collector: string } | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
 
   const fetcher = useCallback(async (offset: number, limit: number) => {
     let query = supabase.from('cash_collections').select('*', { count: 'exact' })
       .order('date', { ascending: false }).order('id', { ascending: false })
-    if (filterDate) query = query.eq('date', filterDate)
-    if (filterAccount) query = query.eq('account_no', filterAccount)
+    if (filterDateRef.current) query = query.eq('date', filterDateRef.current)
+    if (filterAccountRef.current) query = query.eq('account_no', filterAccountRef.current)
     const { data, error, count } = await query.range(offset, offset + limit - 1)
     if (error) return { data: [], total: 0 }
     return { data: data || [], total: count }
-  }, [filterDate, filterAccount])
+  }, [])
 
-  const { items: entries, isLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(fetcher, [fetcher])
+  const { items: entries, isLoading, hasMore, sentinelRef, reload } = useServerInfiniteScroll(fetcher, [])
 
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault()
+    filterDateRef.current = filterDate
+    filterAccountRef.current = filterAccount
     reload()
   }
 
@@ -80,7 +84,7 @@ export default function CollectionsPage() {
             <input type="text" value={filterAccount} onChange={e => setFilterAccount(e.target.value)} maxLength={3} className="input-field" placeholder="Account no..." />
             <div className="flex gap-2">
               <Button type="submit" variant="primary" className="flex-1">Apply</Button>
-              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setFilterDate(''); setFilterAccount(''); reload() }}>Clear</Button>
+              <Button type="button" variant="secondary" className="flex-1" onClick={() => { setFilterDate(''); setFilterAccount(''); filterDateRef.current = ''; filterAccountRef.current = ''; reload() }}>Clear</Button>
             </div>
           </form>
         </Card>

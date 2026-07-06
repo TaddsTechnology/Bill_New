@@ -11,9 +11,8 @@ import { Button } from '../../components/ui/Button'
 import { StatsCard } from '../../components/ui/StatsCard'
 import { Spinner } from '../../components/ui/Spinner'
 import { EmptyState } from '../../components/ui/EmptyState'
-import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { TableSkeleton } from '../../components/ui/TableSkeleton'
-import { exportForSelf, exportForBank, writeWorkbookToFile, deleteYearEntries } from '../../lib/cashCollectionService'
+import { exportForSelf, exportForBank, writeWorkbookToFile } from '../../lib/cashCollectionService'
 
 export default function ReportsPage() {
   const { parties } = useParties()
@@ -27,21 +26,30 @@ export default function ReportsPage() {
   const [totalCollection, setTotalCollection] = useState(0)
   const [totalWithdrawal, setTotalWithdrawal] = useState(0)
   const [totalsLoading, setTotalsLoading] = useState(true)
-  const [cleanupYear, setCleanupYear] = useState('')
-  const [cleanupCount, setCleanupCount] = useState<{ collections: number; withdrawals: number } | null>(null)
-  const [cleanupLoading, setCleanupLoading] = useState(false)
-  const [showCleanupConfirm, setShowCleanupConfirm] = useState(false)
 
   const refreshTotals = useCallback(async (from?: string, to?: string) => {
     setTotalsLoading(true)
     try {
-      let collQuery = supabase.from('cash_collections').select('amount')
-      let wdQuery = supabase.from('withdrawals').select('amount')
-      if (from) { collQuery = collQuery.gte('date', from); wdQuery = wdQuery.gte('date', from) }
-      if (to) { collQuery = collQuery.lte('date', to); wdQuery = wdQuery.lte('date', to) }
-      const [collRes, wdRes] = await Promise.all([collQuery, wdQuery])
-      setTotalCollection((collRes.data || []).reduce((s, e) => s + e.amount, 0))
-      setTotalWithdrawal((wdRes.data || []).reduce((s, w) => s + w.amount, 0))
+      const PAGE = 1000
+      const fetchSum = async (table: string): Promise<number> => {
+        let sum = 0
+        let page = 0
+        while (true) {
+          let q = supabase.from(table as 'cash_collections' | 'withdrawals').select('amount')
+            .range(page * PAGE, (page + 1) * PAGE - 1)
+          if (from) q = q.gte('date', from)
+          if (to) q = q.lte('date', to)
+          const { data } = await q
+          if (!data || data.length === 0) break
+          sum += data.reduce((s, e) => s + e.amount, 0)
+          if (data.length < PAGE) break
+          page++
+        }
+        return sum
+      }
+      const [collSum, wdSum] = await Promise.all([fetchSum('cash_collections'), fetchSum('withdrawals')])
+      setTotalCollection(collSum)
+      setTotalWithdrawal(wdSum)
     } catch {
       addToast('Failed to load totals', 'error')
     } finally {
@@ -136,7 +144,21 @@ export default function ReportsPage() {
   const exportSelf = async () => {
     try {
       const [allEntries, allWithdrawals] = await Promise.all([fetchAllForExport(), fetchAllWithdrawals()])
-      const wb = await exportForSelf(allEntries, parties, allWithdrawals)
+
+      let preRangeBalances: Map<string, number> | undefined
+      const fd = filterFromDateRef.current
+      if (fd) {
+        const [pastColl, pastWd] = await Promise.all([
+          supabase.from('cash_collections').select('account_no, amount').lt('date', fd),
+          supabase.from('withdrawals').select('account_no, amount').lt('date', fd),
+        ])
+        const map = new Map<string, number>()
+        ;(pastColl.data || []).forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
+        ;(pastWd.data || []).forEach(w => map.set(w.account_no, (map.get(w.account_no) || 0) - w.amount))
+        preRangeBalances = map
+      }
+
+      const wb = await exportForSelf(allEntries, parties, allWithdrawals, undefined, preRangeBalances)
       writeWorkbookToFile(wb, 'For Self.xlsx')
       addToast('Personal report exported', 'success')
     } catch {
@@ -155,49 +177,6 @@ export default function ReportsPage() {
       addToast('Bank file exported', 'success')
     } catch {
       addToast('Failed to export bank file', 'error')
-    }
-  }
-
-  const handleCleanupPreview = async () => {
-    if (!cleanupYear) return
-    setCleanupLoading(true)
-    try {
-      const [collRes, wdRes] = await Promise.all([
-        supabase.from('cash_collections').select('amount', { count: 'exact', head: true })
-          .gte('date', `${cleanupYear}-01-01`).lte('date', `${cleanupYear}-12-31`),
-        supabase.from('withdrawals').select('amount', { count: 'exact', head: true })
-          .gte('date', `${cleanupYear}-01-01`).lte('date', `${cleanupYear}-12-31`),
-      ])
-      setCleanupCount({
-        collections: collRes.count ?? 0,
-        withdrawals: wdRes.count ?? 0,
-      })
-      if ((collRes.count ?? 0) === 0 && (wdRes.count ?? 0) === 0) {
-        addToast('No entries found for this year', 'info')
-      } else {
-        setShowCleanupConfirm(true)
-      }
-    } catch {
-      addToast('Failed to check year data', 'error')
-    } finally {
-      setCleanupLoading(false)
-    }
-  }
-
-  const handleCleanupConfirm = async () => {
-    if (!cleanupYear) return
-    setCleanupLoading(true)
-    try {
-      const result = await deleteYearEntries(cleanupYear)
-      addToast(`Deleted ${result.collectionsDeleted} collections and ${result.withdrawalsDeleted} withdrawals for ${cleanupYear}`, 'success')
-      setShowCleanupConfirm(false)
-      setCleanupCount(null)
-      reload()
-      refreshTotals(filterFromDateRef.current || undefined, filterToDateRef.current || undefined)
-    } catch {
-      addToast('Failed to delete entries', 'error')
-    } finally {
-      setCleanupLoading(false)
     }
   }
 
@@ -347,67 +326,7 @@ export default function ReportsPage() {
           )}
         </Card>
 
-        <Card padding="md">
-          <div className="flex items-center gap-2 pb-3 border-b border-gray-100 mb-4">
-            <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            <h2 className="text-lg font-semibold text-gray-900">Year-End Cleanup</h2>
-          </div>
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">
-              Permanently delete all collections and withdrawals for a given year.
-              This action cannot be undone.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-end">
-              <div className="w-full sm:w-48">
-                <label className="block text-xs font-medium text-gray-600 mb-1.5">Select Year</label>
-                <select
-                  value={cleanupYear}
-                  onChange={e => { setCleanupYear(e.target.value); setCleanupCount(null) }}
-                  className="input-field"
-                  disabled={cleanupLoading}
-                >
-                  <option value="">Choose...</option>
-                  {Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - i).map(y => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
-              </div>
-              <Button
-                onClick={handleCleanupPreview}
-                disabled={!cleanupYear || cleanupLoading}
-                variant="danger"
-                size="sm"
-              >
-                {cleanupLoading ? 'Checking...' : 'Check & Delete'}
-              </Button>
-            </div>
-            {cleanupCount && (
-              <div className="text-sm text-gray-600">
-                {cleanupCount.collections > 0 || cleanupCount.withdrawals > 0 ? (
-                  <span>
-                    Found <strong>{cleanupCount.collections}</strong> collections and{' '}
-                    <strong>{cleanupCount.withdrawals}</strong> withdrawals for {cleanupYear}.
-                  </span>
-                ) : (
-                  <span className="text-gray-400">No entries for {cleanupYear}.</span>
-                )}
-              </div>
-            )}
-          </div>
-        </Card>
       </div>
-
-      <ConfirmModal
-        open={showCleanupConfirm}
-        title={`Delete All ${cleanupYear} Data`}
-        message={`Are you sure you want to permanently delete ${cleanupCount?.collections ?? 0} collections and ${cleanupCount?.withdrawals ?? 0} withdrawals for the year ${cleanupYear}? This cannot be undone.`}
-        confirmLabel="Delete All"
-        onConfirm={handleCleanupConfirm}
-        onCancel={() => { setShowCleanupConfirm(false); setCleanupCount(null) }}
-        loading={cleanupLoading}
-      />
     </DashboardLayout>
   )
 }
