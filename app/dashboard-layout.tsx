@@ -87,7 +87,7 @@ export default function DashboardLayout({
 
       {/* Mobile Bottom Nav - hidden on desktop via CSS */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 safe-area-inset-bottom">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-6 h-16">
           {navItems.map((item) => (
             <Link
               key={item.name}
@@ -102,7 +102,8 @@ export default function DashboardLayout({
               <span className={`text-[10px] font-medium truncate max-w-full ${pathname === item.href ? 'text-gray-900' : 'text-gray-500'}`}>
                 {item.name === 'Master Data' ? 'Masters' :
                  item.name === 'Collections' ? 'Cash' :
-                 item.name === 'Withdrawals' ? 'Pay' : item.name}
+                 item.name === 'Withdrawals' ? 'Pay' :
+                 item.name === 'Profile' ? 'Me' : item.name}
               </span>
               {pathname === item.href && (
                 <div className="absolute -top-0.5 w-6 h-0.5 bg-gray-900 rounded-full" />
