@@ -211,10 +211,8 @@ function buildDssWorksheet(
     m.set(day, (m.get(day) || 0) + w.amount)
   })
 
-  // Filter parties that have activity in the month or a non-zero opening balance
-  const relevantParties = parties
-    .filter(p => partyAmountMap.has(p.account_no) || partyWithdrawalMap.has(p.account_no) || (opBalanceMap.get(p.account_no) || 0) !== 0)
-    .sort((a, b) => a.account_no.localeCompare(b.account_no))
+  // Include all master-data parties (even those with no activity and zero balance)
+  const relevantParties = [...parties].sort((a, b) => a.account_no.localeCompare(b.account_no))
 
   // Build the AOA data
   const aoa: (string | number)[][] = []
@@ -243,6 +241,12 @@ function buildDssWorksheet(
   aoa.push(headerRow)
 
   // Data rows
+  let totOpBal = 0
+  const totDayValues = new Array(dayNumbers.length).fill(0)
+  const totWithdrawalDayValues = new Array(dayNumbers.length).fill(0)
+  let totMonthCollection = 0
+  let totMonthWithdrawal = 0
+
   relevantParties.forEach(party => {
     const opBal = opBalanceMap.get(party.account_no) || 0
     const dayMap = partyAmountMap.get(party.account_no) || new Map<number, number>()
@@ -254,7 +258,17 @@ function buildDssWorksheet(
     const netBalance = opBal + monthCollection - monthWithdrawal
     const accountNo5 = String(toPartyCode(party.account_no))
     aoa.push([accountNo5, party.name, opBal, ...interleave(dayValues, withdrawalDayValues), monthCollection, monthWithdrawal, netBalance])
+
+    totOpBal += opBal
+    dayValues.forEach((v, i) => { totDayValues[i] += v })
+    withdrawalDayValues.forEach((v, i) => { totWithdrawalDayValues[i] += v })
+    totMonthCollection += monthCollection
+    totMonthWithdrawal += monthWithdrawal
   })
+
+  // Total row
+  const netTotal = totOpBal + totMonthCollection - totMonthWithdrawal
+  aoa.push(['TOTAL', '', totOpBal, ...interleave(totDayValues, totWithdrawalDayValues), totMonthCollection, totMonthWithdrawal, netTotal])
 
   // Convert to worksheet
   const ws = XLSX.utils.aoa_to_sheet(aoa)
@@ -270,7 +284,7 @@ function buildDssWorksheet(
     { wch: 12 },  // ACCOUNT NO.
     { wch: 35 },  // NAME
     { wch: 12 },  // OP.BALANCE
-    ...dayNumbers.flatMap(() => [{ wch: 9 }, { wch: 9 }]),  // day pairs (coll, with)
+    ...dayNumbers.flatMap(() => [{ wch: 12 }, { wch: 12 }]),  // day pairs (coll, with)
     { wch: 14 },  // TOTAL COLL
     { wch: 14 },  // TOTAL WITH
     { wch: 14 },  // NET
@@ -366,6 +380,21 @@ function buildDssWorksheet(
     ref = XLSX.utils.encode_cell({ r: rowIdx, c: netCol })
     setCellStyle(ws, ref, STYLES.netCell)
   })
+
+  // Total row styling
+  const totalRowIdx = 5 + relevantParties.length
+  setCellStyle(ws, XLSX.utils.encode_cell({ r: totalRowIdx, c: 0 }), STYLES.totalLabel)
+  for (let c = 1; c < totalCols; c++) {
+    const ref = XLSX.utils.encode_cell({ r: totalRowIdx, c })
+    if (c >= fixedStartCols && c < fixedStartCols + dayColCount) {
+      const isWithdrawal = (c - fixedStartCols) % 2 === 1
+      setCellStyle(ws, ref, isWithdrawal ? STYLES.totalWithdrawal : STYLES.total)
+    } else if (c === fixedStartCols + dayColCount + 1) {
+      setCellStyle(ws, ref, STYLES.totalWithdrawal)
+    } else {
+      setCellStyle(ws, ref, STYLES.total)
+    }
+  }
 
   return ws
 }
@@ -1102,6 +1131,104 @@ export async function getPartyWithdrawalTotals(): Promise<Record<string, number>
     map[e.account_no] = (map[e.account_no] || 0) + e.amount
   })
   return map
+}
+
+export interface CleanupEntry {
+  id: number
+  date: string
+  account_no: string
+  amount: number
+  type: 'collection' | 'withdrawal'
+  collector?: string
+}
+
+/**
+ * Fetch entries for cleanup preview, optionally filtered by account.
+ */
+export async function getEntriesForCleanup(
+  fromDate: string,
+  toDate: string,
+  accountNo?: string
+): Promise<CleanupEntry[]> {
+  let collQuery = supabase
+    .from('cash_collections')
+    .select('id, date, account_no, amount, collector')
+    .gte('date', fromDate)
+    .lte('date', toDate)
+
+  let wdQuery = supabase
+    .from('withdrawals')
+    .select('id, date, account_no, amount')
+    .gte('date', fromDate)
+    .lte('date', toDate)
+
+  if (accountNo) {
+    collQuery = collQuery.eq('account_no', accountNo)
+    wdQuery = wdQuery.eq('account_no', accountNo)
+  }
+
+  collQuery = collQuery.order('date', { ascending: true }).order('id', { ascending: true })
+  wdQuery = wdQuery.order('date', { ascending: true }).order('id', { ascending: true })
+
+  const [collRes, wdRes] = await Promise.all([collQuery, wdQuery])
+
+  if (collRes.error) throw collRes.error
+  if (wdRes.error) throw wdRes.error
+
+  const collections: CleanupEntry[] = (collRes.data || []).map(e => ({
+    id: e.id,
+    date: e.date,
+    account_no: e.account_no,
+    amount: e.amount,
+    type: 'collection' as const,
+    collector: e.collector,
+  }))
+
+  const withdrawals: CleanupEntry[] = (wdRes.data || []).map(w => ({
+    id: w.id,
+    date: w.date,
+    account_no: w.account_no,
+    amount: w.amount,
+    type: 'withdrawal' as const,
+  }))
+
+  const merged = [...collections, ...withdrawals].sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1
+    return a.id - b.id
+  })
+
+  return merged
+}
+
+/**
+ * Delete specific entries by their composite keys.
+ */
+export async function deleteSelectedEntries(
+  collectionIds: number[],
+  withdrawalIds: number[]
+): Promise<{ collectionsDeleted: number; withdrawalsDeleted: number }> {
+  let collDeleted = 0
+  let wdDeleted = 0
+
+  if (collectionIds.length > 0) {
+    const { count, error } = await supabase
+      .from('cash_collections')
+      .delete()
+      .in('id', collectionIds)
+    if (error) throw error
+    collDeleted = count ?? 0
+  }
+
+  if (withdrawalIds.length > 0) {
+    const { count, error } = await supabase
+      .from('withdrawals')
+      .delete()
+      .in('id', withdrawalIds)
+    if (error) throw error
+    wdDeleted = count ?? 0
+  }
+
+  return { collectionsDeleted: collDeleted, withdrawalsDeleted: wdDeleted }
 }
 
 /**

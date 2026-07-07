@@ -1,22 +1,29 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useToast } from '../../lib/hooks/useToast'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { Button } from '../../components/ui/Button'
-import { Card } from '../../components/ui/Card'
-import { supabase } from '../../lib/supabaseClient'
-import { deleteEntriesByDateRange } from '../../lib/cashCollectionService'
+import { supabase, type Party } from '../../lib/supabaseClient'
+import {
+  getEntriesForCleanup,
+  deleteSelectedEntries,
+  type CleanupEntry,
+} from '../../lib/cashCollectionService'
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('profile')
   const { addToast } = useToast()
   const [cleanupFromDate, setCleanupFromDate] = useState('')
   const [cleanupToDate, setCleanupToDate] = useState('')
-  const [cleanupCount, setCleanupCount] = useState<{ collections: number; withdrawals: number } | null>(null)
+  const [cleanupAccount, setCleanupAccount] = useState('')
+  const [cleanupEntries, setCleanupEntries] = useState<CleanupEntry[]>([])
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
   const [cleanupLoading, setCleanupLoading] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
   const [showCleanupConfirm, setShowCleanupConfirm] = useState(false)
+  const [parties, setParties] = useState<Party[]>([])
 
   const tabs = [
     { id: 'profile', name: 'Profile', icon: 'M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z' },
@@ -24,48 +31,73 @@ export default function ProfilePage() {
     { id: 'about', name: 'About', icon: 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z' },
   ]
 
-  const handleCleanupPreview = async () => {
+  useEffect(() => {
+    if (activeTab !== 'settings') return
+    supabase.from('parties').select('*').order('account_no', { ascending: true })
+      .then(({ data }) => setParties(data || []))
+  }, [activeTab])
+
+  const handleCleanupCheck = async () => {
     if (!cleanupFromDate || !cleanupToDate) return
     setCleanupLoading(true)
     try {
-      const [collRes, wdRes] = await Promise.all([
-        supabase.from('cash_collections').select('amount', { count: 'exact', head: true })
-          .gte('date', cleanupFromDate).lte('date', cleanupToDate),
-        supabase.from('withdrawals').select('amount', { count: 'exact', head: true })
-          .gte('date', cleanupFromDate).lte('date', cleanupToDate),
-      ])
-      setCleanupCount({
-        collections: collRes.count ?? 0,
-        withdrawals: wdRes.count ?? 0,
-      })
-      if ((collRes.count ?? 0) === 0 && (wdRes.count ?? 0) === 0) {
+      const entries = await getEntriesForCleanup(cleanupFromDate, cleanupToDate, cleanupAccount || undefined)
+      setCleanupEntries(entries)
+      setSelectedKeys(new Set())
+      if (entries.length === 0) {
         addToast('No entries found for this period', 'info')
-      } else {
-        setShowCleanupConfirm(true)
       }
     } catch {
-      addToast('Failed to check data', 'error')
+      addToast('Failed to fetch entries', 'error')
     } finally {
       setCleanupLoading(false)
     }
   }
 
+  const toggleAll = () => {
+    if (selectedKeys.size === cleanupEntries.length) {
+      setSelectedKeys(new Set())
+    } else {
+      setSelectedKeys(new Set(cleanupEntries.map(e => entryKey(e))))
+    }
+  }
+
+  const toggleEntry = (key: string) => {
+    setSelectedKeys(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const handleDeleteSelected = async () => {
+    if (selectedKeys.size === 0) return
+    setShowCleanupConfirm(true)
+  }
+
   const handleCleanupConfirm = async () => {
-    if (!cleanupFromDate || !cleanupToDate) return
-    setCleanupLoading(true)
+    setDeleteLoading(true)
     try {
-      const result = await deleteEntriesByDateRange(cleanupFromDate, cleanupToDate)
+      const collIds = cleanupEntries
+        .filter(e => e.type === 'collection' && selectedKeys.has(entryKey(e)))
+        .map(e => e.id)
+      const wdIds = cleanupEntries
+        .filter(e => e.type === 'withdrawal' && selectedKeys.has(entryKey(e)))
+        .map(e => e.id)
+      const result = await deleteSelectedEntries(collIds, wdIds)
       addToast(`Deleted ${result.collectionsDeleted} collections and ${result.withdrawalsDeleted} withdrawals`, 'success')
       setShowCleanupConfirm(false)
-      setCleanupCount(null)
-      setCleanupFromDate('')
-      setCleanupToDate('')
+      setCleanupEntries([])
+      setSelectedKeys(new Set())
     } catch {
       addToast('Failed to delete entries', 'error')
     } finally {
-      setCleanupLoading(false)
+      setDeleteLoading(false)
     }
   }
+
+  function entryKey(e: CleanupEntry) { return `${e.type}-${e.id}` }
 
   return (
     <DashboardLayout>
@@ -205,37 +237,124 @@ export default function ProfilePage() {
               <div className="p-3 md:p-4 space-y-4">
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-2">Delete Entries by Date Range</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">From Date</label>
-                      <input type="date" value={cleanupFromDate} onChange={e => { setCleanupFromDate(e.target.value); setCleanupCount(null) }} className="input-field" />
+                      <input type="date" value={cleanupFromDate} onChange={e => { setCleanupFromDate(e.target.value); setCleanupEntries([]) }} className="input-field" />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-600 mb-1">To Date</label>
-                      <input type="date" value={cleanupToDate} onChange={e => { setCleanupToDate(e.target.value); setCleanupCount(null) }} className="input-field" />
+                      <input type="date" value={cleanupToDate} onChange={e => { setCleanupToDate(e.target.value); setCleanupEntries([]) }} className="input-field" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-600 mb-1">Account No</label>
+                      <input
+                        type="text"
+                        list="cleanup-accounts"
+                        value={cleanupAccount}
+                        onChange={e => { setCleanupAccount(e.target.value); setCleanupEntries([]) }}
+                        placeholder="All Accounts — type to search"
+                        className="input-field"
+                      />
+                      <datalist id="cleanup-accounts">
+                        {parties.map(p => (
+                          <option key={p.account_no} value={p.account_no}>
+                            {p.account_no} - {p.name}
+                          </option>
+                        ))}
+                      </datalist>
                     </div>
                   </div>
-                  <Button
-                    onClick={handleCleanupPreview}
-                    disabled={!cleanupFromDate || !cleanupToDate || cleanupLoading}
-                    variant="danger"
-                    size="sm"
-                  >
-                    {cleanupLoading ? 'Checking...' : 'Check & Delete'}
-                  </Button>
-                  {cleanupCount && (
-                    <div className="mt-3 text-sm text-gray-600">
-                      {cleanupCount.collections > 0 || cleanupCount.withdrawals > 0 ? (
-                        <span>
-                          Found <strong>{cleanupCount.collections}</strong> collections and{' '}
-                          <strong>{cleanupCount.withdrawals}</strong> withdrawals from {cleanupFromDate} to {cleanupToDate}.
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">No entries in this date range.</span>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={handleCleanupCheck}
+                      disabled={!cleanupFromDate || !cleanupToDate || cleanupLoading}
+                      variant="danger"
+                      size="sm"
+                    >
+                      {cleanupLoading ? 'Loading...' : 'Check'}
+                    </Button>
+                    {cleanupEntries.length > 0 && selectedKeys.size > 0 && (
+                      <Button
+                        onClick={handleDeleteSelected}
+                        variant="danger"
+                        size="sm"
+                      >
+                        Delete Selected ({selectedKeys.size})
+                      </Button>
+                    )}
+                    {cleanupEntries.length > 0 && (
+                      <button
+                        onClick={() => { setCleanupEntries([]); setSelectedKeys(new Set()) }}
+                        className="text-sm text-gray-500 hover:text-gray-700 ml-2"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {cleanupEntries.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-200">
+                          <th className="py-2 pr-2 w-8">
+                            <input
+                              type="checkbox"
+                              checked={selectedKeys.size === cleanupEntries.length}
+                              onChange={toggleAll}
+                              className="accent-gray-900"
+                            />
+                          </th>
+                          <th className="py-2 text-left text-gray-600 font-medium whitespace-nowrap">Account</th>
+                          <th className="py-2 text-left text-gray-600 font-medium whitespace-nowrap">Date</th>
+                          <th className="py-2 text-left text-gray-600 font-medium whitespace-nowrap">Type</th>
+                          <th className="py-2 text-right text-gray-600 font-medium whitespace-nowrap">Amount</th>
+                          <th className="py-2 text-left text-gray-600 font-medium whitespace-nowrap">Collector</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cleanupEntries.map(e => {
+                          const key = entryKey(e)
+                          return (
+                            <tr key={key} className="border-b border-gray-100 hover:bg-gray-50">
+                              <td className="py-1.5 pr-2">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedKeys.has(key)}
+                                  onChange={() => toggleEntry(key)}
+                                  className="accent-gray-900"
+                                />
+                              </td>
+                              <td className="py-1.5 whitespace-nowrap">{e.account_no}</td>
+                              <td className="py-1.5 whitespace-nowrap">{e.date}</td>
+                              <td className="py-1.5 whitespace-nowrap">
+                                <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                  e.type === 'collection'
+                                    ? 'bg-green-100 text-green-700'
+                                    : 'bg-red-100 text-red-700'
+                                }`}>
+                                  {e.type === 'collection' ? 'Collection' : 'Withdrawal'}
+                                </span>
+                              </td>
+                              <td className={`py-1.5 text-right whitespace-nowrap font-medium ${
+                                e.type === 'collection' ? 'text-green-600' : 'text-red-600'
+                              }`}>
+                                {e.type === 'collection' ? '+' : '-'}Rs. {e.amount.toLocaleString('en-IN')}
+                              </td>
+                              <td className="py-1.5 whitespace-nowrap">{e.type === 'collection' ? (e.collector || '-') : '-'}</td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                    <div className="mt-2 text-xs text-gray-500">
+                      Showing {cleanupEntries.length} entry{cleanupEntries.length !== 1 ? 'ies' : 'y'}
+                      {cleanupAccount ? ` for account ${cleanupAccount}` : ''}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -291,12 +410,12 @@ export default function ProfilePage() {
 
       <ConfirmModal
         open={showCleanupConfirm}
-        title={`Delete Data from ${cleanupFromDate} to ${cleanupToDate}`}
-        message={`Are you sure you want to permanently delete ${cleanupCount?.collections ?? 0} collections and ${cleanupCount?.withdrawals ?? 0} withdrawals from ${cleanupFromDate} to ${cleanupToDate}? This cannot be undone.`}
-        confirmLabel="Delete All"
+        title="Delete Selected Entries"
+        message={`Are you sure you want to permanently delete ${selectedKeys.size} selected entry${selectedKeys.size !== 1 ? 'ies' : ''}? This cannot be undone.`}
+        confirmLabel={`Delete ${selectedKeys.size} Entry${selectedKeys.size !== 1 ? 'ies' : ''}`}
         onConfirm={handleCleanupConfirm}
-        onCancel={() => { setShowCleanupConfirm(false); setCleanupCount(null) }}
-        loading={cleanupLoading}
+        onCancel={() => { setShowCleanupConfirm(false) }}
+        loading={deleteLoading}
       />
     </DashboardLayout>
   )
