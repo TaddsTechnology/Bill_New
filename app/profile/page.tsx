@@ -165,15 +165,7 @@ export default function ProfilePage() {
                       readOnly
                     />
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
-                    <input
-                      type="text"
-                      value={user?.id || ''}
-                      className="input-field text-xs font-mono"
-                      readOnly
-                    />
-                  </div>
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Last Sign In</label>
                     <input
