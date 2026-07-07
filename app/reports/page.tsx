@@ -148,13 +148,27 @@ export default function ReportsPage() {
       let preRangeBalances: Map<string, number> | undefined
       const fd = filterFromDateRef.current
       if (fd) {
-        const [pastColl, pastWd] = await Promise.all([
-          supabase.from('cash_collections').select('account_no, amount').lt('date', fd),
-          supabase.from('withdrawals').select('account_no, amount').lt('date', fd),
-        ])
         const map = new Map<string, number>()
-        ;(pastColl.data || []).forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
-        ;(pastWd.data || []).forEach(w => map.set(w.account_no, (map.get(w.account_no) || 0) - w.amount))
+        let page = 0
+        while (true) {
+          const { data } = await supabase.from('cash_collections')
+            .select('account_no, amount').lt('date', fd)
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+          if (!data || data.length === 0) break
+          data.forEach(e => map.set(e.account_no, (map.get(e.account_no) || 0) + e.amount))
+          if (data.length < PAGE_SIZE) break
+          page++
+        }
+        page = 0
+        while (true) {
+          const { data } = await supabase.from('withdrawals')
+            .select('account_no, amount').lt('date', fd)
+            .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+          if (!data || data.length === 0) break
+          data.forEach(w => map.set(w.account_no, (map.get(w.account_no) || 0) - w.amount))
+          if (data.length < PAGE_SIZE) break
+          page++
+        }
         preRangeBalances = map
       }
 
