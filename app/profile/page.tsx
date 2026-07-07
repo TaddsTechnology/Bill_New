@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import DashboardLayout from '../dashboard-layout'
 import { useToast } from '../../lib/hooks/useToast'
+import { useAuth } from '../../lib/hooks/useAuth'
 import { ConfirmModal } from '../../components/ui/ConfirmModal'
 import { Button } from '../../components/ui/Button'
 import { supabase, type Party } from '../../lib/supabaseClient'
@@ -14,6 +15,7 @@ import {
 
 export default function ProfilePage() {
   const [activeTab, setActiveTab] = useState('profile')
+  const { user, signOut } = useAuth()
   const { addToast } = useToast()
   const [cleanupFromDate, setCleanupFromDate] = useState('')
   const [cleanupToDate, setCleanupToDate] = useState('')
@@ -139,51 +141,63 @@ export default function ProfilePage() {
               <div className="p-3 md:p-4">
                 <div className="flex items-center space-x-4 mb-6">
                   <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-gradient-to-br from-gray-400 to-gray-600 flex items-center justify-center">
-                    <span className="text-white text-xl md:text-2xl font-bold">A</span>
+                    <span className="text-white text-xl md:text-2xl font-bold">
+                      {user?.email?.charAt(0).toUpperCase() || '?'}
+                    </span>
                   </div>
                   <div>
-                    <h3 className="text-lg md:text-xl font-semibold text-gray-900">Admin User</h3>
-                    <p className="text-sm text-gray-500">System Administrator</p>
+                    <h3 className="text-lg md:text-xl font-semibold text-gray-900">
+                      {user?.email?.split('@')[0] || 'User'}
+                    </h3>
+                    <p className="text-sm text-gray-500">
+                      {user?.role === 'authenticated' ? 'Authenticated User' : 'User'}
+                    </p>
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                    <input
-                      type="text"
-                      defaultValue="Admin User"
-                      className="input-field"
-                      readOnly
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                    <input
-                      type="text"
-                      defaultValue="Administrator"
-                      className="input-field"
-                      readOnly
-                    />
-                  </div>
-                  <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
                     <input
                       type="email"
-                      defaultValue="admin@cashflow.com"
+                      value={user?.email || ''}
                       className="input-field"
                       readOnly
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Login</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">User ID</label>
                     <input
                       type="text"
-                      defaultValue={new Date().toLocaleDateString('en-GB')}
+                      value={user?.id || ''}
+                      className="input-field text-xs font-mono"
+                      readOnly
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Last Sign In</label>
+                    <input
+                      type="text"
+                      value={user?.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString('en-GB') : '-'}
                       className="input-field"
                       readOnly
                     />
                   </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Account Created</label>
+                    <input
+                      type="text"
+                      value={user?.created_at ? new Date(user.created_at).toLocaleDateString('en-GB') : '-'}
+                      className="input-field"
+                      readOnly
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <Button variant="danger" size="sm" onClick={signOut}>
+                    Sign Out
+                  </Button>
                 </div>
               </div>
             </div>

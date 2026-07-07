@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useAuth } from '../lib/hooks/useAuth'
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const { user, loading, signOut } = useAuth()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const pathname = usePathname()
 
@@ -74,11 +76,20 @@ export default function DashboardLayout({
           <div className="p-4 border-t border-gray-100">
             <div className="flex items-center space-x-3 p-3 rounded-lg bg-gray-50">
               <div className="w-8 h-8 rounded-full bg-gray-900 flex items-center justify-center shrink-0">
-                <span className="text-white text-sm font-semibold">A</span>
+                <span className="text-white text-sm font-semibold">
+                  {user?.email?.charAt(0).toUpperCase() || '?'}
+                </span>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">Admin User</p>
-                <p className="text-xs text-gray-500">© 2025 CashFlow</p>
+                <p className="text-sm font-medium text-gray-900 truncate">
+                  {user?.email?.split('@')[0] || 'User'}
+                </p>
+                <button
+                  onClick={signOut}
+                  className="text-xs text-gray-500 hover:text-red-600 transition-colors"
+                >
+                  Sign out
+                </button>
               </div>
             </div>
           </div>
@@ -179,9 +190,22 @@ export default function DashboardLayout({
 
               <div className="flex items-center space-x-2 bg-gray-50 rounded-lg p-1.5 sm:p-2">
                 <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gray-900 flex items-center justify-center">
-                  <span className="text-white text-xs sm:text-sm font-semibold">A</span>
+                  <span className="text-white text-xs sm:text-sm font-semibold">
+                    {user?.email?.charAt(0).toUpperCase() || '?'}
+                  </span>
                 </div>
-                <span className="font-medium text-gray-700 hidden sm:inline text-sm">Admin</span>
+                <span className="font-medium text-gray-700 hidden sm:inline text-sm">
+                  {user?.email?.split('@')[0] || 'User'}
+                </span>
+                <button
+                  onClick={signOut}
+                  className="ml-1 p-1 text-gray-400 hover:text-red-500 transition-colors"
+                  title="Sign out"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
               </div>
             </div>
           </div>
